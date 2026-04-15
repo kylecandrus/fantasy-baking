@@ -2,7 +2,8 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Home, Target, Tv, Trophy, Settings } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { Home, Target, Tv, Trophy, Settings, HelpCircle } from 'lucide-react';
 
 const NAV_ITEMS = [
   { href: '/', label: 'Home', icon: Home },
@@ -13,6 +14,16 @@ const NAV_ITEMS = [
 
 export default function Navbar() {
   const pathname = usePathname();
+  const router = useRouter();
+
+  function replayGuide() {
+    localStorage.removeItem('fantasy-gbbo-onboarding');
+    if (pathname === '/') {
+      window.location.reload();
+    } else {
+      router.push('/');
+    }
+  }
 
   const isActive = (href: string) =>
     href === '/' ? pathname === '/' : pathname.startsWith(href);
@@ -47,11 +58,19 @@ export default function Navbar() {
                 </Link>
               );
             })}
+            <button
+              onClick={replayGuide}
+              title="How to play"
+              aria-label="How to play guide"
+              className="ml-1 p-2 rounded-lg transition-colors text-ink-faint hover:text-ink-muted hover:bg-cream-dark"
+            >
+              <HelpCircle size={16} />
+            </button>
             <Link
               href="/admin"
               title="Admin"
               aria-label="Admin settings"
-              className={`ml-1 p-2 rounded-lg transition-colors ${
+              className={`p-2 rounded-lg transition-colors ${
                 pathname.startsWith('/admin')
                   ? 'bg-amber-subtle text-amber-dark'
                   : 'text-ink-faint hover:text-ink-muted hover:bg-cream-dark'

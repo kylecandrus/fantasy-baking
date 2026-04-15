@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase';
 import { Episode, CATEGORIES } from '@/lib/types';
 import Leaderboard from '@/components/Leaderboard';
 import EpisodeCard from '@/components/EpisodeCard';
+import Onboarding from '@/components/Onboarding';
 import { Target, Tv, BarChart3, ArrowRight, Radio, ChevronDown } from 'lucide-react';
 
 export default function Home() {
@@ -32,6 +33,8 @@ export default function Home() {
 
   return (
     <div className="space-y-6 stagger">
+      <Onboarding />
+
       {/* Header */}
       <div className="pt-4 md:pt-2">
         <h1 className="font-display text-3xl md:text-4xl text-ink tracking-tight">

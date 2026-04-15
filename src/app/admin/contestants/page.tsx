@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { Contestant, Episode } from '@/lib/types';
 import { useAdmin } from '@/hooks/usePlayer';
-import { ArrowLeft, Plus, Trash2, RotateCcw, ChevronDown } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, RotateCcw, ChevronDown, Camera } from 'lucide-react';
 
 export default function AdminContestantsPage() {
   const { isAdmin, loaded } = useAdmin();
@@ -16,6 +16,7 @@ export default function AdminContestantsPage() {
   const [showBulk, setShowBulk] = useState(false);
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
+  const [uploading, setUploading] = useState<string | null>(null);
 
   async function loadData() {
     const [contestantsRes, episodesRes] = await Promise.all([
@@ -57,6 +58,42 @@ export default function AdminContestantsPage() {
   async function deleteContestant(contestant: Contestant) {
     if (!confirm(`Delete ${contestant.name}?`)) return;
     await supabase.from('contestants').delete().eq('id', contestant.id);
+    await loadData();
+  }
+
+  async function uploadPhoto(contestant: Contestant, file: File) {
+    setUploading(contestant.id);
+    const ext = file.name.split('.').pop() || 'jpg';
+    const path = `${contestant.id}.${ext}`;
+
+    // Remove old photo if it exists (different extension)
+    const { data: existingFiles } = await supabase.storage.from('contestant-photos').list('', { search: contestant.id });
+    if (existingFiles) {
+      for (const f of existingFiles) {
+        if (f.name.startsWith(contestant.id)) {
+          await supabase.storage.from('contestant-photos').remove([f.name]);
+        }
+      }
+    }
+
+    const { error: uploadError } = await supabase.storage
+      .from('contestant-photos')
+      .upload(path, file, { upsert: true });
+
+    if (uploadError) {
+      alert(`Upload failed: ${uploadError.message}`);
+      setUploading(null);
+      return;
+    }
+
+    const { data: urlData } = supabase.storage
+      .from('contestant-photos')
+      .getPublicUrl(path);
+
+    // Append timestamp to bust cache
+    const publicUrl = `${urlData.publicUrl}?t=${Date.now()}`;
+    await supabase.from('contestants').update({ image_url: publicUrl }).eq('id', contestant.id);
+    setUploading(null);
     await loadData();
   }
 
@@ -129,7 +166,31 @@ export default function AdminContestantsPage() {
           <div className="divide-y divide-border/60">
             {active.map((c) => (
               <div key={c.id} className="px-4 py-3 flex items-center justify-between gap-2">
-                <span className="font-medium text-ink">{c.name}</span>
+                <div className="flex items-center gap-3">
+                  <label className="relative cursor-pointer group shrink-0">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => { if (e.target.files?.[0]) uploadPhoto(c, e.target.files[0]); }}
+                    />
+                    {c.image_url ? (
+                      <img src={c.image_url} alt={c.name} className="w-9 h-9 rounded-full object-cover" />
+                    ) : (
+                      <div className="w-9 h-9 rounded-full bg-cream-dark flex items-center justify-center text-sm font-bold text-ink-muted">
+                        {c.name[0]}
+                      </div>
+                    )}
+                    <div className="absolute inset-0 rounded-full bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                      {uploading === c.id ? (
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      ) : (
+                        <Camera size={14} className="text-white" />
+                      )}
+                    </div>
+                  </label>
+                  <span className="font-medium text-ink">{c.name}</span>
+                </div>
                 <div className="flex items-center gap-2">
                   <select
                     defaultValue=""
@@ -160,9 +221,18 @@ export default function AdminContestantsPage() {
           <div className="divide-y divide-border/60">
             {eliminated.map((c) => (
               <div key={c.id} className="px-4 py-3 flex items-center justify-between opacity-60">
-                <div>
-                  <span className="font-medium text-ink">{c.name}</span>
-                  <span className="text-xs text-ink-muted ml-2">Week {c.eliminated_week}</span>
+                <div className="flex items-center gap-3">
+                  {c.image_url ? (
+                    <img src={c.image_url} alt={c.name} className="w-9 h-9 rounded-full object-cover shrink-0" />
+                  ) : (
+                    <div className="w-9 h-9 rounded-full bg-cream-dark flex items-center justify-center text-sm font-bold text-ink-muted shrink-0">
+                      {c.name[0]}
+                    </div>
+                  )}
+                  <div>
+                    <span className="font-medium text-ink">{c.name}</span>
+                    <span className="text-xs text-ink-muted ml-2">Week {c.eliminated_week}</span>
+                  </div>
                 </div>
                 <button onClick={() => eliminate(c, null)} className="btn btn-secondary btn-sm">
                   <RotateCcw size={12} /> Restore

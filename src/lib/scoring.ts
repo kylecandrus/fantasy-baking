@@ -1,11 +1,10 @@
 import { Pick, Result, PickCategory, CATEGORIES } from './types';
 
-const POSITIVE_CATEGORIES: PickCategory[] = ['star_baker', 'technical_winner', 'handshake'];
-
 export function calculatePickScore(
   pick: Pick,
   results: Result[],
-  sentHomeContestantId: string | null
+  sentHomeContestantId: string | null,
+  starBakerContestantId: string | null
 ): number {
   const matchingResult = results.find((r) => r.category === pick.category);
   if (!matchingResult) return 0;
@@ -16,11 +15,20 @@ export function calculatePickScore(
     return cat?.points ?? 0;
   }
 
-  // Penalty: -1 if you picked someone who got sent home for a positive category
+  // Penalty: picked someone for Star Baker but they went home
   if (
+    pick.category === 'star_baker' &&
     sentHomeContestantId &&
-    pick.contestant_id === sentHomeContestantId &&
-    POSITIVE_CATEGORIES.includes(pick.category)
+    pick.contestant_id === sentHomeContestantId
+  ) {
+    return -1;
+  }
+
+  // Penalty: picked someone to go home but they were Star Baker
+  if (
+    pick.category === 'sent_home' &&
+    starBakerContestantId &&
+    pick.contestant_id === starBakerContestantId
   ) {
     return -1;
   }

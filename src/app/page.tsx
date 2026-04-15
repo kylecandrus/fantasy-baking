@@ -109,7 +109,7 @@ export default function Home() {
             </div>
           </div>
           <p className="text-xs text-ink-muted mt-3">
-            Penalty: If you pick someone for Star Baker, Technical Winner, or Handshake and they get sent home that week, you lose 1 point.
+            Penalty: If you pick someone for Star Baker and they go home, or pick someone to go home and they win Star Baker, you lose 1 point.
           </p>
         </div>
       </details>

@@ -134,14 +134,9 @@ export default function AdminEpisodesPage() {
                 </div>
                 <div className="flex flex-wrap gap-1.5">
                   {ep.status === 'upcoming' && (
-                    <>
-                      <button onClick={() => setStatus(ep.id, 'open')} className="btn btn-primary btn-sm">
-                        <Radio size={13} /> Open Picks
-                      </button>
-                      <button onClick={() => deleteEpisode(ep.id)} className="btn btn-danger btn-sm">
-                        <Trash2 size={13} /> Delete
-                      </button>
-                    </>
+                    <button onClick={() => setStatus(ep.id, 'open')} className="btn btn-primary btn-sm">
+                      <Radio size={13} /> Open Picks
+                    </button>
                   )}
                   {ep.status === 'open' && (
                     <button onClick={() => setStatus(ep.id, 'locked')} className="btn btn-danger btn-sm">
@@ -163,6 +158,9 @@ export default function AdminEpisodesPage() {
                       <Eye size={13} /> View
                     </Link>
                   )}
+                  <button onClick={() => deleteEpisode(ep.id)} className="btn btn-danger btn-sm ml-auto">
+                    <Trash2 size={13} /> Delete
+                  </button>
                 </div>
               </div>
             );

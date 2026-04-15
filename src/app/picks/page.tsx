@@ -5,13 +5,14 @@ import { supabase } from '@/lib/supabase';
 import { Episode, Contestant, CATEGORIES, WINNER_GUESS_CATEGORY } from '@/lib/types';
 import { usePlayer } from '@/hooks/usePlayer';
 import PlayerSelector from '@/components/PlayerSelector';
-import { Target, Check, AlertCircle } from 'lucide-react';
+import { Target, Check, AlertCircle, Lock } from 'lucide-react';
 
 export default function PicksPage() {
   const { playerId, loaded } = usePlayer();
   const [episode, setEpisode] = useState<Episode | null>(null);
   const [contestants, setContestants] = useState<Contestant[]>([]);
   const [picks, setPicks] = useState<Record<string, string>>({});
+  const [lockedCategory, setLockedCategory] = useState<string | null>(null);
   const [existingPicks, setExistingPicks] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -53,6 +54,8 @@ export default function PicksPage() {
           data.forEach((p) => (existing[p.category] = p.contestant_id));
           setPicks(existing);
           setExistingPicks(true);
+          const locked = data.find((p) => p.locked);
+          if (locked) setLockedCategory(locked.category);
         }
       });
   }, [playerId, episode]);
@@ -83,6 +86,7 @@ export default function PicksPage() {
           episode_id: episode.id,
           category: cat.key,
           contestant_id: contestantId,
+          locked: lockedCategory === cat.key,
         },
         { onConflict: 'player_id,episode_id,category' }
       );
@@ -160,46 +164,77 @@ export default function PicksPage() {
       )}
 
       <div className="space-y-4 stagger">
-        {allCategories.map((cat) => (
-          <div key={cat.key} className="card p-4">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="font-semibold text-ink">{cat.label}</h3>
-              <span className="text-xs font-medium text-ink-muted bg-cream-dark px-2 py-0.5 rounded-md">
-                {cat.points} pts
-              </span>
+        {allCategories.map((cat) => {
+          const isLocked = lockedCategory === cat.key;
+          const hasPick = !!picks[cat.key];
+          return (
+            <div key={cat.key} className={`card p-4 transition-all ${isLocked ? 'ring-2 ring-amber/40 border-amber/30' : ''}`}>
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <h3 className="font-semibold text-ink">{cat.label}</h3>
+                  {isLocked && (
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-amber-dark bg-amber-subtle px-1.5 py-0.5 rounded">
+                      Locked 2x
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  {hasPick && (
+                    <button
+                      onClick={() => setLockedCategory(isLocked ? null : cat.key)}
+                      className={`p-1.5 rounded-lg transition-colors ${
+                        isLocked
+                          ? 'text-amber-dark bg-amber-subtle'
+                          : 'text-ink-faint hover:text-ink-muted hover:bg-cream-dark'
+                      }`}
+                      title={isLocked ? 'Unlock this pick' : 'Lock for 2x points'}
+                    >
+                      <Lock size={14} />
+                    </button>
+                  )}
+                  <span className="text-xs font-medium text-ink-muted bg-cream-dark px-2 py-0.5 rounded-md">
+                    {isLocked ? `${cat.points * 2}` : cat.points} pts
+                  </span>
+                </div>
+              </div>
+              <div className="grid grid-cols-3 sm:grid-cols-4 gap-1.5">
+                {(cat.key === 'winner_guess' ? contestants : activeContestants).map((c) => {
+                  const selected = picks[cat.key] === c.id;
+                  return (
+                    <button
+                      key={c.id}
+                      onClick={() => setPicks((prev) => ({
+                        ...prev,
+                        [cat.key]: prev[cat.key] === c.id ? '' : c.id,
+                      }))}
+                      className={`relative p-2 rounded-xl text-sm font-medium text-center transition-all border cursor-pointer ${
+                        selected
+                          ? 'bg-amber-subtle border-amber text-amber-dark ring-1 ring-amber/20'
+                          : 'bg-surface border-border text-ink-secondary hover:border-ink-faint'
+                      }`}
+                    >
+                      {selected && (
+                        <Check size={12} className="absolute top-1.5 right-1.5 text-amber" />
+                      )}
+                      {c.image_url && (
+                        <img src={c.image_url} alt={c.name} className="w-10 h-10 rounded-full mx-auto mb-1 object-cover" />
+                      )}
+                      {c.name}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-            <div className="grid grid-cols-3 sm:grid-cols-4 gap-1.5">
-              {(cat.key === 'winner_guess' ? contestants : activeContestants).map((c) => {
-                const selected = picks[cat.key] === c.id;
-                return (
-                  <button
-                    key={c.id}
-                    onClick={() => setPicks((prev) => ({
-                      ...prev,
-                      [cat.key]: prev[cat.key] === c.id ? '' : c.id,
-                    }))}
-                    className={`relative p-2 rounded-xl text-sm font-medium text-center transition-all border cursor-pointer ${
-                      selected
-                        ? 'bg-amber-subtle border-amber text-amber-dark ring-1 ring-amber/20'
-                        : 'bg-surface border-border text-ink-secondary hover:border-ink-faint'
-                    }`}
-                  >
-                    {selected && (
-                      <Check size={12} className="absolute top-1.5 right-1.5 text-amber" />
-                    )}
-                    {c.image_url && (
-                      <img src={c.image_url} alt={c.name} className="w-10 h-10 rounded-full mx-auto mb-1 object-cover" />
-                    )}
-                    {c.name}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       <div className="sticky bottom-20 md:bottom-4 z-40 pt-2">
+        {!lockedCategory && filledCount > 0 && (
+          <p className="text-xs text-ink-muted text-center mb-2">
+            Tap the <Lock size={10} className="inline" /> icon on a category to lock it for 2x points (but lose half if wrong)
+          </p>
+        )}
         {error && (
           <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-red-50 border border-red-200 text-sm text-red-700 mb-2">
             <AlertCircle size={16} className="shrink-0" />

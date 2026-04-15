@@ -9,27 +9,26 @@ export function calculatePickScore(
   const matchingResult = results.find((r) => r.category === pick.category);
   if (!matchingResult) return 0;
 
+  const cat = CATEGORIES.find((c) => c.key === pick.category);
+  const basePoints = cat?.points ?? 0;
+  const locked = !!pick.locked;
+
   // Check if this pick is correct
   if (pick.contestant_id === matchingResult.contestant_id) {
-    const cat = CATEGORIES.find((c) => c.key === pick.category);
-    return cat?.points ?? 0;
+    return locked ? basePoints * 2 : basePoints;
   }
 
-  // Penalty: picked someone for Star Baker but they went home
-  if (
-    pick.category === 'star_baker' &&
-    sentHomeContestantId &&
-    pick.contestant_id === sentHomeContestantId
-  ) {
-    return -1;
+  // Check if a penalty applies (Star Baker pick goes home, or Sent Home pick is Star Baker)
+  const hasPenalty =
+    (pick.category === 'star_baker' && sentHomeContestantId && pick.contestant_id === sentHomeContestantId) ||
+    (pick.category === 'sent_home' && starBakerContestantId && pick.contestant_id === starBakerContestantId);
+
+  if (locked) {
+    // Lock penalty: lose half the base points (replaces the -1 penalty if applicable)
+    return -Math.floor(basePoints / 2);
   }
 
-  // Penalty: picked someone to go home but they were Star Baker
-  if (
-    pick.category === 'sent_home' &&
-    starBakerContestantId &&
-    pick.contestant_id === starBakerContestantId
-  ) {
+  if (hasPenalty) {
     return -1;
   }
 
@@ -42,5 +41,15 @@ export function calculateWinnerGuessScore(
   guessPoints: number
 ): number {
   if (!actualWinnerId || pick.category !== 'winner_guess') return 0;
-  return pick.contestant_id === actualWinnerId ? guessPoints : 0;
+  const locked = !!pick.locked;
+
+  if (pick.contestant_id === actualWinnerId) {
+    return locked ? guessPoints * 2 : guessPoints;
+  }
+
+  if (locked) {
+    return -Math.floor(guessPoints / 2);
+  }
+
+  return 0;
 }

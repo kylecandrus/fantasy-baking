@@ -110,17 +110,17 @@ export default function AdminResultsPage() {
 
     const sentHomeResult = typedResults.find((r) => r.category === 'sent_home');
     const sentHomeContestantId = sentHomeResult?.contestant_id || null;
+    const starBakerResult = typedResults.find((r) => r.category === 'star_baker');
+    const starBakerContestantId = starBakerResult?.contestant_id || null;
     const winnerResult = typedResults.find((r) => r.category === 'winner_guess');
 
     const scoreInserts: { player_id: string; episode_id: string; category: string; points: number }[] = [];
 
     for (const pick of typedPicks) {
-      let points = 0;
-      if (pick.category === 'winner_guess' && episode.winner_guess_points) {
-        points = calculateWinnerGuessScore(pick, winnerResult?.contestant_id || null, episode.winner_guess_points);
-      } else {
-        points = calculatePickScore(pick, typedResults, sentHomeContestantId);
-      }
+      // Skip winner guesses — they're scored at the end of the season, not per-episode
+      if (pick.category === 'winner_guess') continue;
+
+      const points = calculatePickScore(pick, typedResults, sentHomeContestantId, starBakerContestantId);
       scoreInserts.push({ player_id: pick.player_id, episode_id: episode.id, category: pick.category, points });
     }
 
@@ -130,6 +130,47 @@ export default function AdminResultsPage() {
 
       const { error: insertError } = await supabase.from('scores').insert(scoreInserts);
       if (insertError) { setScoring(false); setError('Failed to save scores.'); return; }
+    }
+
+    // Week 10 (finale): automatically score all winner guesses from the season
+    if (episode.week_number === 10) {
+      const winnerResult = typedResults.find((r) => r.category === 'winner_guess');
+      const actualWinnerId = winnerResult?.contestant_id || null;
+
+      if (actualWinnerId) {
+        // Find all episodes that had winner_guess_points (weeks 1 and 5)
+        const { data: allEpisodes } = await supabase
+          .from('episodes')
+          .select('*')
+          .not('winner_guess_points', 'is', null);
+
+        if (allEpisodes) {
+          const winnerScoreInserts: typeof scoreInserts = [];
+
+          for (const ep of allEpisodes) {
+            const { data: epPicks } = await supabase
+              .from('picks')
+              .select('*')
+              .eq('episode_id', ep.id)
+              .eq('category', 'winner_guess');
+
+            if (epPicks) {
+              // Clear any existing winner guess scores for this episode
+              await supabase.from('scores').delete().eq('episode_id', ep.id).eq('category', 'winner_guess');
+
+              for (const pick of epPicks) {
+                const points = pick.contestant_id === actualWinnerId ? (ep.winner_guess_points || 0) : 0;
+                winnerScoreInserts.push({ player_id: pick.player_id, episode_id: ep.id, category: 'winner_guess', points });
+              }
+            }
+          }
+
+          if (winnerScoreInserts.length > 0) {
+            const { error: winnerInsertError } = await supabase.from('scores').insert(winnerScoreInserts);
+            if (winnerInsertError) { setScoring(false); setError('Episode scored but failed to score winner guesses.'); return; }
+          }
+        }
+      }
     }
 
     const { error: statusError } = await supabase.from('episodes').update({ status: 'scored' }).eq('id', episode.id);

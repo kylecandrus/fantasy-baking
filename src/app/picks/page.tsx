@@ -182,14 +182,14 @@ export default function PicksPage() {
                   {hasPick && (
                     <button
                       onClick={() => setLockedCategory(isLocked ? null : cat.key)}
-                      className={`p-1.5 rounded-lg transition-colors ${
+                      className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
                         isLocked
-                          ? 'text-amber-dark bg-amber-subtle'
-                          : 'text-ink-faint hover:text-ink-muted hover:bg-cream-dark'
+                          ? 'text-white bg-amber shadow-sm'
+                          : 'text-ink-muted border border-border hover:border-amber/40 hover:text-amber-dark hover:bg-amber-subtle/50'
                       }`}
-                      title={isLocked ? 'Unlock this pick' : 'Lock for 2x points'}
                     >
-                      <Lock size={14} />
+                      <Lock size={13} />
+                      {isLocked ? 'Locked' : 'Lock'}
                     </button>
                   )}
                   <span className="text-xs font-medium text-ink-muted bg-cream-dark px-2 py-0.5 rounded-md">

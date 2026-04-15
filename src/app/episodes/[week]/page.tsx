@@ -5,7 +5,7 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { Episode, Pick, Result, Player, Contestant, CATEGORIES, WINNER_GUESS_CATEGORY, getPlayerColor } from '@/lib/types';
-import { ArrowLeft, Target, Check, X, Minus, Clock } from 'lucide-react';
+import { ArrowLeft, Target, Check, X, Minus, Clock, Lock } from 'lucide-react';
 
 export default function EpisodeDetailPage() {
   const params = useParams();
@@ -76,6 +76,10 @@ export default function EpisodeDetailPage() {
   const getPickScore = (playerId: string, category: string) => {
     const score = categoryScores.find((s) => s.player_id === playerId && s.category === category);
     return score?.points ?? null;
+  };
+  const isLocked = (playerId: string, category: string) => {
+    const pick = picks.find((p) => p.player_id === playerId && p.category === category);
+    return !!pick?.locked;
   };
 
   if (loading) {
@@ -156,17 +160,21 @@ export default function EpisodeDetailPage() {
                     {players.map((p) => {
                       const correct = isCorrect(p.id, cat.key);
                       const pickScore = getPickScore(p.id, cat.key);
+                      const locked = isLocked(p.id, cat.key);
                       return (
                         <td key={p.id} className="p-3">
                           <div className="flex items-center gap-1.5">
+                            {locked && <Lock size={11} className="text-amber shrink-0" />}
                             <span className={correct === true ? 'font-semibold text-sage' : correct === false ? 'text-ink-muted' : 'text-ink'}>
                               {getPlayerPick(p.id, cat.key)}
                             </span>
                             {correct === true && <Check size={13} className="text-sage" />}
-                            {correct === false && pickScore !== null && pickScore < 0 && (
-                              <span className="text-xs font-semibold text-terracotta">{pickScore}</span>
+                            {pickScore !== null && pickScore !== 0 && (
+                              <span className={`text-xs font-semibold ${pickScore > 0 ? 'text-sage' : 'text-terracotta'}`}>
+                                {pickScore > 0 ? '+' : ''}{pickScore}
+                              </span>
                             )}
-                            {correct === false && (pickScore === null || pickScore >= 0) && <X size={13} className="text-ink-faint" />}
+                            {correct === false && (pickScore === null || pickScore === 0) && <X size={13} className="text-ink-faint" />}
                           </div>
                         </td>
                       );

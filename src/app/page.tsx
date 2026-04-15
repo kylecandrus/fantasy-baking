@@ -109,6 +109,9 @@ export default function Home() {
             </div>
           </div>
           <p className="text-xs text-ink-muted mt-3">
+            Lock: You can lock ONE pick per week for 2x points if correct, but you lose half the base points if wrong.
+          </p>
+          <p className="text-xs text-ink-muted mt-1">
             Penalty: If you pick someone for Star Baker and they go home, or pick someone to go home and they win Star Baker, you lose 1 point.
           </p>
         </div>

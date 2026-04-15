@@ -159,7 +159,7 @@ export default function AdminResultsPage() {
               await supabase.from('scores').delete().eq('episode_id', ep.id).eq('category', 'winner_guess');
 
               for (const pick of epPicks) {
-                const points = pick.contestant_id === actualWinnerId ? (ep.winner_guess_points || 0) : 0;
+                const points = calculateWinnerGuessScore(pick as Pick, actualWinnerId, ep.winner_guess_points || 0);
                 winnerScoreInserts.push({ player_id: pick.player_id, episode_id: ep.id, category: 'winner_guess', points });
               }
             }

@@ -58,6 +58,7 @@ export interface Pick {
   episode_id: string;
   category: PickCategory;
   contestant_id: string;
+  locked: boolean;
   created_at: string;
   // Joined fields
   player?: Player;

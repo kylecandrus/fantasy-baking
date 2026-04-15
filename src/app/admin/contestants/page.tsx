@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase';
 import { Contestant, Episode } from '@/lib/types';
 import { useAdmin } from '@/hooks/usePlayer';
 import { ArrowLeft, Plus, Trash2, RotateCcw, ChevronDown, Camera } from 'lucide-react';
+import ImageCropModal from '@/components/ImageCropModal';
 
 export default function AdminContestantsPage() {
   const { isAdmin, loaded } = useAdmin();
@@ -17,6 +18,8 @@ export default function AdminContestantsPage() {
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
   const [uploading, setUploading] = useState<string | null>(null);
+  const [cropFile, setCropFile] = useState<File | null>(null);
+  const [cropContestant, setCropContestant] = useState<Contestant | null>(null);
 
   async function loadData() {
     const [contestantsRes, episodesRes] = await Promise.all([
@@ -61,10 +64,14 @@ export default function AdminContestantsPage() {
     await loadData();
   }
 
-  async function uploadPhoto(contestant: Contestant, file: File) {
+  function handleFileSelect(contestant: Contestant, file: File) {
+    setCropContestant(contestant);
+    setCropFile(file);
+  }
+
+  async function uploadPhoto(contestant: Contestant, blob: Blob) {
     setUploading(contestant.id);
-    const ext = file.name.split('.').pop() || 'jpg';
-    const path = `${contestant.id}.${ext}`;
+    const path = `${contestant.id}.jpg`;
 
     // Remove old photo if it exists (different extension)
     const { data: existingFiles } = await supabase.storage.from('contestant-photos').list('', { search: contestant.id });
@@ -78,7 +85,7 @@ export default function AdminContestantsPage() {
 
     const { error: uploadError } = await supabase.storage
       .from('contestant-photos')
-      .upload(path, file, { upsert: true });
+      .upload(path, blob, { upsert: true, contentType: 'image/jpeg' });
 
     if (uploadError) {
       alert(`Upload failed: ${uploadError.message}`);
@@ -172,7 +179,7 @@ export default function AdminContestantsPage() {
                       type="file"
                       accept="image/*"
                       className="hidden"
-                      onChange={(e) => { if (e.target.files?.[0]) uploadPhoto(c, e.target.files[0]); }}
+                      onChange={(e) => { if (e.target.files?.[0]) handleFileSelect(c, e.target.files[0]); }}
                     />
                     {c.image_url ? (
                       <img src={c.image_url} alt={c.name} className="w-9 h-9 rounded-full object-cover" />
@@ -241,6 +248,19 @@ export default function AdminContestantsPage() {
             ))}
           </div>
         </div>
+      )}
+
+      {cropFile && cropContestant && (
+        <ImageCropModal
+          file={cropFile}
+          onCrop={(blob) => {
+            setCropFile(null);
+            const contestant = cropContestant;
+            setCropContestant(null);
+            uploadPhoto(contestant, blob);
+          }}
+          onCancel={() => { setCropFile(null); setCropContestant(null); }}
+        />
       )}
     </div>
   );

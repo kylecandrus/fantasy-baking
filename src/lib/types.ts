@@ -8,11 +8,31 @@ export type PickCategory =
   | 'handshake'
   | 'winner_guess';
 
+export type PlayerColor = 'amber' | 'terracotta' | 'sage' | 'slate' | 'plum' | 'burnt' | 'olive' | 'clay' | 'rose' | 'navy';
+
 export interface Player {
   id: string;
   name: string;
   is_admin: boolean;
+  color: PlayerColor;
   created_at: string;
+}
+
+export const PLAYER_COLORS: { key: PlayerColor; label: string; bg: string; text: string }[] = [
+  { key: 'amber', label: 'Amber', bg: '#C8902E', text: '#FFFFFF' },
+  { key: 'terracotta', label: 'Terracotta', bg: '#C4756E', text: '#FFFFFF' },
+  { key: 'sage', label: 'Sage', bg: '#5B8C5A', text: '#FFFFFF' },
+  { key: 'slate', label: 'Slate', bg: '#6B8DAD', text: '#FFFFFF' },
+  { key: 'plum', label: 'Plum', bg: '#8B6B7E', text: '#FFFFFF' },
+  { key: 'burnt', label: 'Burnt Orange', bg: '#C67D4B', text: '#FFFFFF' },
+  { key: 'olive', label: 'Olive', bg: '#7A8B5A', text: '#FFFFFF' },
+  { key: 'clay', label: 'Clay', bg: '#9B7565', text: '#FFFFFF' },
+  { key: 'rose', label: 'Rose', bg: '#B07D8E', text: '#FFFFFF' },
+  { key: 'navy', label: 'Navy', bg: '#5A6B7A', text: '#FFFFFF' },
+];
+
+export function getPlayerColor(color?: string) {
+  return PLAYER_COLORS.find((c) => c.key === color) || PLAYER_COLORS[0];
 }
 
 export interface Contestant {

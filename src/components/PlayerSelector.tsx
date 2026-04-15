@@ -2,28 +2,15 @@
 
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Player } from '@/lib/types';
+import { Player, PLAYER_COLORS, getPlayerColor } from '@/lib/types';
 import { usePlayer } from '@/hooks/usePlayer';
-import { User, ChevronDown } from 'lucide-react';
-
-const PLAYER_COLORS: Record<string, string> = {
-  Kyle: 'bg-amber-subtle text-amber-dark border-amber/20',
-  Erika: 'bg-terracotta-subtle text-terracotta border-terracotta/20',
-  Brian: 'bg-sage-subtle text-sage border-sage/20',
-  Jill: 'bg-amber-subtle text-amber-dark border-amber/20',
-};
-
-const PLAYER_INITIALS_BG: Record<string, string> = {
-  Kyle: 'bg-amber text-white',
-  Erika: 'bg-terracotta text-white',
-  Brian: 'bg-sage text-white',
-  Jill: 'bg-amber-dark text-white',
-};
+import { User, ChevronDown, Palette } from 'lucide-react';
 
 export default function PlayerSelector({ compact = false }: { compact?: boolean }) {
   const { playerId, setPlayerId, loaded } = usePlayer();
   const [players, setPlayers] = useState<Player[]>([]);
   const [selectedPlayer, setSelectedPlayer] = useState<Player | null>(null);
+  const [showColorPicker, setShowColorPicker] = useState(false);
 
   useEffect(() => {
     supabase.from('players').select('*').order('name').then(({ data }) => {
@@ -34,35 +21,79 @@ export default function PlayerSelector({ compact = false }: { compact?: boolean 
   useEffect(() => {
     if (playerId && players.length > 0) {
       setSelectedPlayer(players.find((p) => p.id === playerId) || null);
+    } else {
+      setSelectedPlayer(null);
     }
   }, [playerId, players]);
+
+  async function changeColor(colorKey: string) {
+    if (!selectedPlayer) return;
+    await supabase.from('players').update({ color: colorKey }).eq('id', selectedPlayer.id);
+    const updated = { ...selectedPlayer, color: colorKey as Player['color'] };
+    setSelectedPlayer(updated);
+    setPlayers((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+    setShowColorPicker(false);
+  }
 
   if (!loaded) return null;
 
   if (selectedPlayer) {
+    const color = getPlayerColor(selectedPlayer.color);
+
     if (compact) {
       return (
-        <button
-          onClick={() => setPlayerId(null)}
-          className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-sm font-medium transition-colors hover:opacity-80 ${PLAYER_COLORS[selectedPlayer.name] || 'bg-cream-dark text-ink border-border'}`}
-        >
-          <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${PLAYER_INITIALS_BG[selectedPlayer.name] || 'bg-ink-muted text-white'}`}>
-            {selectedPlayer.name[0]}
-          </div>
-          {selectedPlayer.name}
-          <ChevronDown size={12} />
-        </button>
+        <div className="relative">
+          <button
+            onClick={() => setShowColorPicker(!showColorPicker)}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-border bg-surface text-sm font-medium transition-colors hover:border-ink-faint"
+          >
+            <span className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold" style={{ background: color.bg, color: color.text }}>
+              {selectedPlayer.name[0]}
+            </span>
+            {selectedPlayer.name}
+            <ChevronDown size={12} className="text-ink-muted" />
+          </button>
+          {showColorPicker && (
+            <div className="absolute right-0 top-full mt-2 z-50 card p-3 w-56 animate-fade-up">
+              <p className="text-xs font-medium text-ink-muted mb-2">Your color</p>
+              <div className="grid grid-cols-5 gap-1.5 mb-3">
+                {PLAYER_COLORS.map((c) => (
+                  <button
+                    key={c.key}
+                    onClick={() => changeColor(c.key)}
+                    className={`w-8 h-8 rounded-full transition-all ${selectedPlayer.color === c.key ? 'ring-2 ring-offset-2 ring-ink-muted scale-110' : 'hover:scale-105'}`}
+                    style={{ background: c.bg }}
+                    title={c.label}
+                  />
+                ))}
+              </div>
+              <button
+                onClick={() => { setPlayerId(null); setShowColorPicker(false); }}
+                className="text-xs text-ink-muted hover:text-ink underline underline-offset-2 w-full text-center"
+              >
+                Switch player
+              </button>
+            </div>
+          )}
+        </div>
       );
     }
 
     return (
       <div className="flex items-center gap-3">
-        <div className={`flex items-center gap-2.5 px-4 py-2 rounded-xl border ${PLAYER_COLORS[selectedPlayer.name] || 'bg-cream-dark text-ink border-border'}`}>
-          <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${PLAYER_INITIALS_BG[selectedPlayer.name] || 'bg-ink-muted text-white'}`}>
+        <div className="flex items-center gap-2.5 px-4 py-2 rounded-xl border border-border bg-surface">
+          <span className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold" style={{ background: color.bg, color: color.text }}>
             {selectedPlayer.name[0]}
-          </div>
-          <span className="font-semibold">{selectedPlayer.name}</span>
+          </span>
+          <span className="font-semibold text-ink">{selectedPlayer.name}</span>
         </div>
+        <button
+          onClick={() => setShowColorPicker(!showColorPicker)}
+          className="p-2 rounded-lg text-ink-muted hover:text-ink hover:bg-cream-dark transition-colors"
+          title="Change color"
+        >
+          <Palette size={16} />
+        </button>
         <button
           onClick={() => setPlayerId(null)}
           className="text-sm text-ink-muted hover:text-ink underline underline-offset-2"
@@ -81,18 +112,21 @@ export default function PlayerSelector({ compact = false }: { compact?: boolean 
       <h2 className="font-display text-xl text-ink mb-1">Who&apos;s playing?</h2>
       <p className="text-sm text-ink-muted mb-5">Select your name to get started</p>
       <div className="grid grid-cols-2 gap-2.5">
-        {players.map((player) => (
-          <button
-            key={player.id}
-            onClick={() => setPlayerId(player.id)}
-            className="card card-interactive p-4 flex items-center gap-3"
-          >
-            <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold shrink-0 ${PLAYER_INITIALS_BG[player.name] || 'bg-ink-muted text-white'}`}>
-              {player.name[0]}
-            </div>
-            <span className="font-semibold text-ink text-left">{player.name}</span>
-          </button>
-        ))}
+        {players.map((player) => {
+          const color = getPlayerColor(player.color);
+          return (
+            <button
+              key={player.id}
+              onClick={() => setPlayerId(player.id)}
+              className="card card-interactive p-4 flex items-center gap-3"
+            >
+              <span className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold shrink-0" style={{ background: color.bg, color: color.text }}>
+                {player.name[0]}
+              </span>
+              <span className="font-semibold text-ink text-left">{player.name}</span>
+            </button>
+          );
+        })}
       </div>
     </div>
   );

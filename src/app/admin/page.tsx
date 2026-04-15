@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useAdmin } from '@/hooks/usePlayer';
-import { Lock, Tv, ChefHat, LogOut, ChevronRight } from 'lucide-react';
+import { Lock, Tv, ChefHat, Users, LogOut, ChevronRight } from 'lucide-react';
 
 export default function AdminPage() {
   const { isAdmin, login, logout, loaded } = useAdmin();
@@ -51,6 +51,7 @@ export default function AdminPage() {
   const links = [
     { href: '/admin/episodes', label: 'Episodes', desc: 'Create, open, lock & enter results', icon: Tv },
     { href: '/admin/contestants', label: 'Contestants', desc: 'Add bakers, mark eliminations', icon: ChefHat },
+    { href: '/admin/players', label: 'Players', desc: 'Add players, change colors', icon: Users },
   ];
 
   return (

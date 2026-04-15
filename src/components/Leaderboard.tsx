@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Player } from '@/lib/types';
+import { Player, getPlayerColor } from '@/lib/types';
 import { Crown, Medal } from 'lucide-react';
 
 interface LeaderboardEntry {
@@ -16,13 +16,6 @@ const RANK_BG = [
   'bg-cream-dark border-border',
   'bg-surface border-border',
 ];
-
-const PLAYER_COLORS: Record<string, string> = {
-  Kyle: 'bg-amber',
-  Erika: 'bg-terracotta',
-  Brian: 'bg-sage',
-  Jill: 'bg-amber-dark',
-};
 
 export default function Leaderboard({ compact = false }: { compact?: boolean }) {
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
@@ -70,11 +63,9 @@ export default function Leaderboard({ compact = false }: { compact?: boolean }) 
     return (
       <div className={compact ? '' : 'card'}>
         {!compact && (
-          <div className="px-5 py-4 border-b border-border">
-            <h2 className="font-display text-lg text-ink flex items-center gap-2">
-              <Trophy size={18} className="text-amber" />
-              Standings
-            </h2>
+          <div className="px-5 py-4 border-b border-border flex items-center gap-2">
+            <Crown size={18} className="text-amber" />
+            <h2 className="font-display text-lg text-ink">Standings</h2>
           </div>
         )}
         <div className={compact ? 'py-4' : 'p-6'}>
@@ -93,33 +84,32 @@ export default function Leaderboard({ compact = false }: { compact?: boolean }) 
         </div>
       )}
       <div className={`${compact ? '' : 'p-3'} space-y-1.5 stagger`}>
-        {entries.map((entry, i) => (
-          <div
-            key={entry.player.id}
-            className={`flex items-center gap-3 p-3 rounded-xl border ${RANK_BG[i] || RANK_BG[3]}`}
-          >
-            <div className="w-7 text-center shrink-0">
-              {i === 0 ? (
-                <Medal size={18} className="text-amber mx-auto" />
-              ) : (
-                <span className="text-sm font-semibold text-ink-muted">{i + 1}</span>
-              )}
+        {entries.map((entry, i) => {
+          const color = getPlayerColor(entry.player.color);
+          return (
+            <div
+              key={entry.player.id}
+              className={`flex items-center gap-3 p-3 rounded-xl border ${RANK_BG[i] || RANK_BG[3]}`}
+            >
+              <div className="w-7 text-center shrink-0">
+                {i === 0 ? (
+                  <Medal size={18} className="text-amber mx-auto" />
+                ) : (
+                  <span className="text-sm font-semibold text-ink-muted">{i + 1}</span>
+                )}
+              </div>
+              <span className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0" style={{ background: color.bg, color: color.text }}>
+                {entry.player.name[0]}
+              </span>
+              <span className="font-semibold text-ink flex-1">{entry.player.name}</span>
+              <span className={`font-bold tabular-nums ${i === 0 ? 'text-amber-dark text-lg' : 'text-ink-secondary'}`}>
+                {entry.total}
+                <span className="text-ink-muted font-normal text-xs ml-0.5">pts</span>
+              </span>
             </div>
-            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0 ${PLAYER_COLORS[entry.player.name] || 'bg-ink-muted'}`}>
-              {entry.player.name[0]}
-            </div>
-            <span className="font-semibold text-ink flex-1">{entry.player.name}</span>
-            <span className={`font-bold tabular-nums ${i === 0 ? 'text-amber-dark text-lg' : 'text-ink-secondary'}`}>
-              {entry.total}
-              <span className="text-ink-muted font-normal text-xs ml-0.5">pts</span>
-            </span>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
-}
-
-function Trophy({ size, className }: { size: number; className?: string }) {
-  return <Crown size={size} className={className} />;
 }

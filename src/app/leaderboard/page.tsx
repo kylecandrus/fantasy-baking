@@ -2,20 +2,13 @@
 
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Player, Episode } from '@/lib/types';
-import { Crown, Medal, TrendingUp, TrendingDown, Minus } from 'lucide-react';
+import { Player, Episode, getPlayerColor } from '@/lib/types';
+import { Crown, Medal } from 'lucide-react';
 
 interface WeekScore {
   episode: Episode;
   scores: Record<string, number>;
 }
-
-const PLAYER_DOT: Record<string, string> = {
-  Kyle: 'bg-amber',
-  Erika: 'bg-terracotta',
-  Brian: 'bg-sage',
-  Jill: 'bg-amber-dark',
-};
 
 export default function LeaderboardPage() {
   const [players, setPlayers] = useState<Player[]>([]);
@@ -91,9 +84,9 @@ export default function LeaderboardPage() {
                   <span className="text-sm font-semibold text-ink-muted">{i + 1}</span>
                 )}
               </div>
-              <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold text-white shrink-0 ${PLAYER_DOT[player.name] || 'bg-ink-muted'}`}>
+              <span className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold shrink-0" style={{ background: getPlayerColor(player.color).bg, color: '#fff' }}>
                 {player.name[0]}
-              </div>
+              </span>
               <span className="font-semibold text-ink flex-1">{player.name}</span>
               <span className={`font-bold text-lg tabular-nums ${i === 0 ? 'text-amber-dark' : 'text-ink'}`}>
                 {totals[player.id] || 0}
@@ -128,7 +121,7 @@ export default function LeaderboardPage() {
                   <tr key={player.id} className={pi < sortedPlayers.length - 1 ? 'border-b border-border/50' : ''}>
                     <td className="p-3 pl-4 sticky left-0 bg-surface z-10">
                       <div className="flex items-center gap-2">
-                        <span className={`w-2 h-2 rounded-full shrink-0 ${PLAYER_DOT[player.name] || 'bg-ink-muted'}`} />
+                        <span className="w-2 h-2 rounded-full shrink-0" style={{ background: getPlayerColor(player.color).bg }} />
                         <span className="font-semibold text-ink">{player.name}</span>
                       </div>
                     </td>

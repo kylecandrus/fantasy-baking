@@ -6,6 +6,7 @@ CREATE TABLE players (
   id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
   name text UNIQUE NOT NULL,
   is_admin boolean DEFAULT false,
+  color text DEFAULT 'amber',
   created_at timestamptz DEFAULT now()
 );
 

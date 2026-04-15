@@ -4,15 +4,8 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
-import { Episode, Pick, Result, Player, Contestant, CATEGORIES } from '@/lib/types';
+import { Episode, Pick, Result, Player, Contestant, CATEGORIES, getPlayerColor } from '@/lib/types';
 import { ArrowLeft, Target, Check, X, Minus } from 'lucide-react';
-
-const PLAYER_DOT: Record<string, string> = {
-  Kyle: 'bg-amber',
-  Erika: 'bg-terracotta',
-  Brian: 'bg-sage',
-  Jill: 'bg-amber-dark',
-};
 
 export default function EpisodeDetailPage() {
   const params = useParams();
@@ -124,7 +117,7 @@ export default function EpisodeDetailPage() {
                   {players.map((p) => (
                     <th key={p.id} className="text-left p-3 font-semibold text-ink text-xs uppercase tracking-wider">
                       <div className="flex items-center gap-1.5">
-                        <span className={`w-2 h-2 rounded-full ${PLAYER_DOT[p.name] || 'bg-ink-muted'}`} />
+                        <span className="w-2 h-2 rounded-full" style={{ background: getPlayerColor(p.color).bg }} />
                         {p.name}
                       </div>
                     </th>
@@ -177,9 +170,9 @@ export default function EpisodeDetailPage() {
                   }`}
                 >
                   <div className="flex items-center gap-3">
-                    <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white ${PLAYER_DOT[player.name] || 'bg-ink-muted'}`}>
+                    <span className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold" style={{ background: getPlayerColor(player.color).bg, color: '#fff' }}>
                       {player.name[0]}
-                    </div>
+                    </span>
                     <span className="font-semibold text-ink">{player.name}</span>
                   </div>
                   <span className={`font-bold tabular-nums ${pts > 0 ? 'text-sage' : pts < 0 ? 'text-terracotta' : 'text-ink-muted'}`}>

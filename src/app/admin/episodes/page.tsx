@@ -18,9 +18,15 @@ export default function AdminEpisodesPage() {
   const { isAdmin, loaded } = useAdmin();
   const [episodes, setEpisodes] = useState<Episode[]>([]);
   const [newTheme, setNewTheme] = useState('');
-  const [winnerGuessPoints, setWinnerGuessPoints] = useState('');
   const [showAdd, setShowAdd] = useState(false);
   const [loading, setLoading] = useState(true);
+
+  // Winner guess points: Week 1 = 10pts, Week 5 = 7pts, others = none
+  function getWinnerGuessPoints(week: number): number | null {
+    if (week === 1) return 10;
+    if (week === 5) return 7;
+    return null;
+  }
 
   async function loadEpisodes() {
     const { data } = await supabase.from('episodes').select('*').order('week_number');
@@ -37,10 +43,9 @@ export default function AdminEpisodesPage() {
       week_number: nextWeek,
       theme: newTheme.trim(),
       status: 'upcoming',
-      winner_guess_points: winnerGuessPoints ? parseInt(winnerGuessPoints) : null,
+      winner_guess_points: getWinnerGuessPoints(nextWeek),
     });
     setNewTheme('');
-    setWinnerGuessPoints('');
     setShowAdd(false);
     loadEpisodes();
   }
@@ -88,13 +93,13 @@ export default function AdminEpisodesPage() {
             className="input"
             autoFocus
           />
-          <input
-            type="number"
-            value={winnerGuessPoints}
-            onChange={(e) => setWinnerGuessPoints(e.target.value)}
-            placeholder="Winner guess pts (leave empty for none)"
-            className="input"
-          />
+          {(() => {
+            const nextWeek = (episodes.length > 0 ? Math.max(...episodes.map((e) => e.week_number)) : 0) + 1;
+            const pts = getWinnerGuessPoints(nextWeek);
+            return pts ? (
+              <p className="text-xs text-amber-dark">Week {nextWeek} includes Winner Guess for {pts} pts</p>
+            ) : null;
+          })()}
           <div className="flex gap-2">
             <button onClick={addEpisode} disabled={!newTheme.trim()} className="btn btn-primary btn-sm">Add Episode</button>
             <button onClick={() => setShowAdd(false)} className="btn btn-secondary btn-sm">Cancel</button>

@@ -92,7 +92,7 @@ export default function Leaderboard({ compact = false }: { compact?: boolean }) 
               className={`flex items-center gap-3 p-3 rounded-xl border ${RANK_BG[i] || RANK_BG[3]}`}
             >
               <div className="w-7 text-center shrink-0">
-                {i === 0 ? (
+                {i === 0 && entry.total > 0 ? (
                   <Medal size={18} className="text-amber mx-auto" />
                 ) : (
                   <span className="text-sm font-semibold text-ink-muted">{i + 1}</span>
@@ -104,7 +104,7 @@ export default function Leaderboard({ compact = false }: { compact?: boolean }) 
               <span className="font-semibold text-ink flex-1">{entry.player.name}</span>
               <span className={`font-bold tabular-nums ${i === 0 ? 'text-amber-dark text-lg' : 'text-ink-secondary'}`}>
                 {entry.total}
-                <span className="text-ink-muted font-normal text-xs ml-0.5">pts</span>
+                <span className="text-ink-secondary font-medium text-xs ml-0.5">pts</span>
               </span>
             </div>
           );

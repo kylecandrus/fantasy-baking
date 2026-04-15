@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
-import { Episode, Contestant, CATEGORIES, WINNER_GUESS_CATEGORY } from '@/lib/types';
+import { Episode, Contestant, Pick, Result, CATEGORIES, WINNER_GUESS_CATEGORY } from '@/lib/types';
 import { useAdmin } from '@/hooks/usePlayer';
 import { calculatePickScore, calculateWinnerGuessScore } from '@/lib/scoring';
 import { ArrowLeft, Check, Save, Trophy, AlertCircle } from 'lucide-react';
@@ -21,6 +21,7 @@ export default function AdminResultsPage() {
   const [existingResults, setExistingResults] = useState(false);
   const [saving, setSaving] = useState(false);
   const [scoring, setScoring] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -43,7 +44,7 @@ export default function AdminResultsPage() {
       if (contestantsRes.data) setContestants(contestantsRes.data);
       if (resultsRes.data && resultsRes.data.length > 0) {
         const existing: Record<string, string> = {};
-        resultsRes.data.forEach((r: any) => (existing[r.category] = r.contestant_id));
+        resultsRes.data.forEach((r: Result) => (existing[r.category] = r.contestant_id));
         setResults(existing);
         setExistingResults(true);
       }
@@ -63,20 +64,31 @@ export default function AdminResultsPage() {
   async function saveResults() {
     if (!episode) return;
     setSaving(true);
+    setError(null);
 
     for (const cat of allCategories) {
       const contestantId = results[cat.key];
       if (!contestantId) continue;
 
-      await supabase.from('results').upsert(
+      const { error: upsertError } = await supabase.from('results').upsert(
         { episode_id: episode.id, category: cat.key, contestant_id: contestantId },
         { onConflict: 'episode_id,category' }
       );
+      if (upsertError) {
+        setSaving(false);
+        setError('Failed to save results. Try again.');
+        return;
+      }
     }
 
     const sentHomeId = results['sent_home'];
     if (sentHomeId) {
-      await supabase.from('contestants').update({ eliminated_week: episode.week_number }).eq('id', sentHomeId);
+      const { error: elimError } = await supabase.from('contestants').update({ eliminated_week: episode.week_number }).eq('id', sentHomeId);
+      if (elimError) {
+        setSaving(false);
+        setError('Results saved but failed to mark contestant as eliminated.');
+        return;
+      }
     }
 
     setSaving(false);
@@ -86,35 +98,43 @@ export default function AdminResultsPage() {
   async function scoreEpisode() {
     if (!episode) return;
     setScoring(true);
+    setError(null);
 
     const { data: picks } = await supabase.from('picks').select('*').eq('episode_id', episode.id);
     const { data: resultRows } = await supabase.from('results').select('*').eq('episode_id', episode.id);
 
-    if (!picks || !resultRows) { setScoring(false); return; }
+    if (!picks || !resultRows) { setScoring(false); setError('Failed to load picks or results.'); return; }
 
-    const sentHomeResult = resultRows.find((r: any) => r.category === 'sent_home');
+    const typedPicks = picks as Pick[];
+    const typedResults = resultRows as Result[];
+
+    const sentHomeResult = typedResults.find((r) => r.category === 'sent_home');
     const sentHomeContestantId = sentHomeResult?.contestant_id || null;
-    const winnerResult = resultRows.find((r: any) => r.category === 'winner_guess');
-
-    await supabase.from('scores').delete().eq('episode_id', episode.id);
+    const winnerResult = typedResults.find((r) => r.category === 'winner_guess');
 
     const scoreInserts: { player_id: string; episode_id: string; category: string; points: number }[] = [];
 
-    for (const pick of picks) {
+    for (const pick of typedPicks) {
       let points = 0;
       if (pick.category === 'winner_guess' && episode.winner_guess_points) {
-        points = calculateWinnerGuessScore(pick as any, winnerResult?.contestant_id || null, episode.winner_guess_points);
+        points = calculateWinnerGuessScore(pick, winnerResult?.contestant_id || null, episode.winner_guess_points);
       } else {
-        points = calculatePickScore(pick as any, resultRows as any, sentHomeContestantId);
+        points = calculatePickScore(pick, typedResults, sentHomeContestantId);
       }
       scoreInserts.push({ player_id: pick.player_id, episode_id: episode.id, category: pick.category, points });
     }
 
     if (scoreInserts.length > 0) {
-      await supabase.from('scores').insert(scoreInserts);
+      const { error: deleteError } = await supabase.from('scores').delete().eq('episode_id', episode.id);
+      if (deleteError) { setScoring(false); setError('Failed to clear old scores.'); return; }
+
+      const { error: insertError } = await supabase.from('scores').insert(scoreInserts);
+      if (insertError) { setScoring(false); setError('Failed to save scores.'); return; }
     }
 
-    await supabase.from('episodes').update({ status: 'scored' }).eq('id', episode.id);
+    const { error: statusError } = await supabase.from('episodes').update({ status: 'scored' }).eq('id', episode.id);
+    if (statusError) { setScoring(false); setError('Scores saved but failed to lock episode.'); return; }
+
     setScoring(false);
     router.push(`/episodes/${weekNumber}`);
   }
@@ -191,6 +211,12 @@ export default function AdminResultsPage() {
       </div>
 
       <div className="space-y-2 sticky bottom-20 md:bottom-4 z-40 pt-2">
+        {error && (
+          <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-red-50 border border-red-200 text-sm text-red-700">
+            <AlertCircle size={16} className="shrink-0" />
+            {error}
+          </div>
+        )}
         <button
           onClick={saveResults}
           disabled={saving || filledCount < requiredCount}

@@ -21,7 +21,7 @@ export default function Navbar() {
     <>
       {/* Desktop nav */}
       <nav className="hidden md:block sticky top-0 z-50 bg-cream/80 backdrop-blur-xl border-b border-border">
-        <div className="max-w-2xl mx-auto px-4 flex items-center justify-between h-14">
+        <div className="max-w-3xl mx-auto px-4 flex items-center justify-between h-14">
           <Link href="/" className="flex items-center gap-2.5">
             <div className="w-7 h-7 rounded-lg bg-amber flex items-center justify-center">
               <span className="text-white text-xs font-bold">FB</span>
@@ -49,6 +49,8 @@ export default function Navbar() {
             })}
             <Link
               href="/admin"
+              title="Admin"
+              aria-label="Admin settings"
               className={`ml-1 p-2 rounded-lg transition-colors ${
                 pathname.startsWith('/admin')
                   ? 'bg-amber-subtle text-amber-dark'

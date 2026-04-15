@@ -39,7 +39,7 @@ export function useAdmin() {
   }, []);
 
   const login = useCallback((pin: string): boolean => {
-    if (pin === '5595') {
+    if (pin === process.env.NEXT_PUBLIC_ADMIN_PIN) {
       localStorage.setItem(ADMIN_KEY, 'true');
       setIsAdminState(true);
       return true;

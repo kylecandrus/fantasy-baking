@@ -15,6 +15,7 @@ export default function PicksPage() {
   const [existingPicks, setExistingPicks] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -66,13 +67,17 @@ export default function PicksPage() {
 
   async function handleSave() {
     if (!playerId || !episode) return;
+    if (filledCount < allCategories.length) {
+      if (!confirm(`You've only filled ${filledCount} of ${allCategories.length} categories. Submit anyway?`)) return;
+    }
     setSaving(true);
+    setError(null);
 
     for (const cat of allCategories) {
       const contestantId = picks[cat.key];
       if (!contestantId) continue;
 
-      await supabase.from('picks').upsert(
+      const { error: upsertError } = await supabase.from('picks').upsert(
         {
           player_id: playerId,
           episode_id: episode.id,
@@ -81,6 +86,11 @@ export default function PicksPage() {
         },
         { onConflict: 'player_id,episode_id,category' }
       );
+      if (upsertError) {
+        setSaving(false);
+        setError('Failed to save picks. Try again.');
+        return;
+      }
     }
 
     setSaving(false);
@@ -164,8 +174,11 @@ export default function PicksPage() {
                 return (
                   <button
                     key={c.id}
-                    onClick={() => setPicks((prev) => ({ ...prev, [cat.key]: c.id }))}
-                    className={`relative p-2.5 rounded-xl text-sm font-medium text-center transition-all border cursor-pointer ${
+                    onClick={() => setPicks((prev) => ({
+                      ...prev,
+                      [cat.key]: prev[cat.key] === c.id ? '' : c.id,
+                    }))}
+                    className={`relative p-2 rounded-xl text-sm font-medium text-center transition-all border cursor-pointer ${
                       selected
                         ? 'bg-amber-subtle border-amber text-amber-dark ring-1 ring-amber/20'
                         : 'bg-surface border-border text-ink-secondary hover:border-ink-faint'
@@ -173,6 +186,9 @@ export default function PicksPage() {
                   >
                     {selected && (
                       <Check size={12} className="absolute top-1.5 right-1.5 text-amber" />
+                    )}
+                    {c.image_url && (
+                      <img src={c.image_url} alt={c.name} className="w-10 h-10 rounded-full mx-auto mb-1 object-cover" />
                     )}
                     {c.name}
                   </button>
@@ -184,6 +200,12 @@ export default function PicksPage() {
       </div>
 
       <div className="sticky bottom-20 md:bottom-4 z-40 pt-2">
+        {error && (
+          <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-red-50 border border-red-200 text-sm text-red-700 mb-2">
+            <AlertCircle size={16} className="shrink-0" />
+            {error}
+          </div>
+        )}
         <button
           onClick={handleSave}
           disabled={saving || filledCount === 0}

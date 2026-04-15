@@ -11,6 +11,9 @@ export default function PlayerSelector({ compact = false }: { compact?: boolean 
   const [players, setPlayers] = useState<Player[]>([]);
   const [selectedPlayer, setSelectedPlayer] = useState<Player | null>(null);
   const [showColorPicker, setShowColorPicker] = useState(false);
+  const [pinPromptPlayer, setPinPromptPlayer] = useState<Player | null>(null);
+  const [pinInput, setPinInput] = useState('');
+  const [pinError, setPinError] = useState(false);
 
   useEffect(() => {
     supabase.from('players').select('*').order('name').then(({ data }) => {
@@ -35,6 +38,28 @@ export default function PlayerSelector({ compact = false }: { compact?: boolean 
     setShowColorPicker(false);
   }
 
+  function handlePlayerClick(player: Player) {
+    if (player.pin) {
+      setPinPromptPlayer(player);
+      setPinInput('');
+      setPinError(false);
+    } else {
+      setPlayerId(player.id);
+    }
+  }
+
+  function handlePinSubmit() {
+    if (!pinPromptPlayer) return;
+    if (pinInput === pinPromptPlayer.pin) {
+      setPlayerId(pinPromptPlayer.id);
+      setPinPromptPlayer(null);
+      setPinInput('');
+      setPinError(false);
+    } else {
+      setPinError(true);
+    }
+  }
+
   if (!loaded) return null;
 
   if (selectedPlayer) {
@@ -57,15 +82,25 @@ export default function PlayerSelector({ compact = false }: { compact?: boolean 
             <div className="absolute right-0 top-full mt-2 z-50 card p-3 w-56 animate-fade-up">
               <p className="text-xs font-medium text-ink-muted mb-2">Your color</p>
               <div className="grid grid-cols-5 gap-1.5 mb-3">
-                {PLAYER_COLORS.map((c) => (
-                  <button
-                    key={c.key}
-                    onClick={() => changeColor(c.key)}
-                    className={`w-8 h-8 rounded-full transition-all ${selectedPlayer.color === c.key ? 'ring-2 ring-offset-2 ring-ink-muted scale-110' : 'hover:scale-105'}`}
-                    style={{ background: c.bg }}
-                    title={c.label}
-                  />
-                ))}
+                {PLAYER_COLORS.map((c) => {
+                  const takenBy = players.find((p) => p.id !== selectedPlayer.id && p.color === c.key);
+                  return (
+                    <button
+                      key={c.key}
+                      onClick={() => !takenBy && changeColor(c.key)}
+                      disabled={!!takenBy}
+                      className={`w-8 h-8 rounded-full transition-all ${
+                        selectedPlayer.color === c.key
+                          ? 'ring-2 ring-offset-2 ring-ink-muted scale-110'
+                          : takenBy
+                          ? 'opacity-30 cursor-not-allowed'
+                          : 'hover:scale-105'
+                      }`}
+                      style={{ background: c.bg }}
+                      title={takenBy ? `Taken by ${takenBy.name}` : c.label}
+                    />
+                  );
+                })}
               </div>
               <button
                 onClick={() => { setPlayerId(null); setShowColorPicker(false); }}
@@ -80,7 +115,7 @@ export default function PlayerSelector({ compact = false }: { compact?: boolean 
     }
 
     return (
-      <div className="flex items-center gap-3">
+      <div className="relative flex items-center gap-3">
         <div className="flex items-center gap-2.5 px-4 py-2 rounded-xl border border-border bg-surface">
           <span className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold" style={{ background: color.bg, color: color.text }}>
             {selectedPlayer.name[0]}
@@ -100,6 +135,32 @@ export default function PlayerSelector({ compact = false }: { compact?: boolean 
         >
           Switch
         </button>
+        {showColorPicker && (
+          <div className="absolute left-0 top-full mt-2 z-50 card p-3 w-56 animate-fade-up">
+            <p className="text-xs font-medium text-ink-muted mb-2">Your color</p>
+            <div className="grid grid-cols-5 gap-1.5">
+              {PLAYER_COLORS.map((c) => {
+                const takenBy = players.find((p) => p.id !== selectedPlayer.id && p.color === c.key);
+                return (
+                  <button
+                    key={c.key}
+                    onClick={() => !takenBy && changeColor(c.key)}
+                    disabled={!!takenBy}
+                    className={`w-8 h-8 rounded-full transition-all ${
+                      selectedPlayer.color === c.key
+                        ? 'ring-2 ring-offset-2 ring-ink-muted scale-110'
+                        : takenBy
+                        ? 'opacity-30 cursor-not-allowed'
+                        : 'hover:scale-105'
+                    }`}
+                    style={{ background: c.bg }}
+                    title={takenBy ? `Taken by ${takenBy.name}` : c.label}
+                  />
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -117,7 +178,7 @@ export default function PlayerSelector({ compact = false }: { compact?: boolean 
           return (
             <button
               key={player.id}
-              onClick={() => setPlayerId(player.id)}
+              onClick={() => handlePlayerClick(player)}
               className="card card-interactive p-4 flex items-center gap-3"
             >
               <span className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold shrink-0" style={{ background: color.bg, color: color.text }}>
@@ -128,6 +189,28 @@ export default function PlayerSelector({ compact = false }: { compact?: boolean 
           );
         })}
       </div>
+
+      {pinPromptPlayer && (
+        <div className="mt-4 p-4 rounded-xl border border-border bg-surface animate-fade-up">
+          <p className="text-sm font-medium text-ink mb-2">Enter PIN for {pinPromptPlayer.name}</p>
+          <div className="flex gap-2">
+            <input
+              type="password"
+              inputMode="numeric"
+              maxLength={4}
+              value={pinInput}
+              onChange={(e) => { setPinInput(e.target.value); setPinError(false); }}
+              onKeyDown={(e) => e.key === 'Enter' && handlePinSubmit()}
+              className={`flex-1 px-3 py-2 rounded-lg border text-sm text-center tracking-widest ${pinError ? 'border-red-300 bg-red-50' : 'border-border bg-cream'}`}
+              placeholder="••••"
+              autoFocus
+            />
+            <button onClick={handlePinSubmit} className="btn btn-primary btn-sm">Go</button>
+            <button onClick={() => setPinPromptPlayer(null)} className="btn btn-secondary btn-sm">Cancel</button>
+          </div>
+          {pinError && <p className="text-xs text-red-600 mt-1">Wrong PIN. Try again.</p>}
+        </div>
+      )}
     </div>
   );
 }

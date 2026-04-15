@@ -3,10 +3,10 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
-import { Episode } from '@/lib/types';
+import { Episode, CATEGORIES } from '@/lib/types';
 import Leaderboard from '@/components/Leaderboard';
 import EpisodeCard from '@/components/EpisodeCard';
-import { Target, Tv, BarChart3, ArrowRight, Radio } from 'lucide-react';
+import { Target, Tv, BarChart3, ArrowRight, Radio, ChevronDown } from 'lucide-react';
 
 export default function Home() {
   const [currentEpisode, setCurrentEpisode] = useState<Episode | null>(null);
@@ -87,6 +87,32 @@ export default function Home() {
 
       {/* Leaderboard */}
       <Leaderboard />
+
+      {/* How Scoring Works */}
+      <details className="card overflow-hidden">
+        <summary className="px-5 py-4 font-display text-lg text-ink cursor-pointer hover:bg-cream-dark transition-colors list-none flex items-center justify-between">
+          How Scoring Works
+          <ChevronDown size={16} className="text-ink-muted transition-transform [[open]>&]:rotate-180" />
+        </summary>
+        <div className="px-5 pb-5 border-t border-border/50">
+          <p className="text-sm text-ink-secondary mt-4 mb-3">Each week, pick a contestant for every category. Correct picks earn points:</p>
+          <div className="space-y-1.5">
+            {CATEGORIES.map((cat) => (
+              <div key={cat.key} className="flex items-center justify-between text-sm py-1.5 px-3 rounded-lg bg-cream">
+                <span className="text-ink font-medium">{cat.label}</span>
+                <span className="text-ink-muted font-semibold tabular-nums">{cat.points} pts</span>
+              </div>
+            ))}
+            <div className="flex items-center justify-between text-sm py-1.5 px-3 rounded-lg bg-cream">
+              <span className="text-ink font-medium">Winner Guess</span>
+              <span className="text-ink-muted font-semibold tabular-nums">7–10 pts</span>
+            </div>
+          </div>
+          <p className="text-xs text-ink-muted mt-3">
+            Penalty: If you pick someone for Star Baker, Technical Winner, or Handshake and they get sent home that week, you lose 1 point.
+          </p>
+        </div>
+      </details>
 
       {/* Quick Links */}
       <div className="grid grid-cols-2 gap-3">

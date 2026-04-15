@@ -13,8 +13,8 @@ export type PlayerColor = 'amber' | 'terracotta' | 'sage' | 'slate' | 'plum' | '
 export interface Player {
   id: string;
   name: string;
-  is_admin: boolean;
   color: PlayerColor;
+  pin: string | null;
   created_at: string;
 }
 

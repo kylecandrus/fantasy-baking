@@ -4,8 +4,8 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
-import { Episode, Pick, Result, Player, Contestant, CATEGORIES, getPlayerColor } from '@/lib/types';
-import { ArrowLeft, Target, Check, X, Minus } from 'lucide-react';
+import { Episode, Pick, Result, Player, Contestant, CATEGORIES, WINNER_GUESS_CATEGORY, getPlayerColor } from '@/lib/types';
+import { ArrowLeft, Target, Check, X, Minus, Clock } from 'lucide-react';
 
 export default function EpisodeDetailPage() {
   const params = useParams();
@@ -16,6 +16,7 @@ export default function EpisodeDetailPage() {
   const [players, setPlayers] = useState<Player[]>([]);
   const [contestants, setContestants] = useState<Contestant[]>([]);
   const [scores, setScores] = useState<Record<string, number>>({});
+  const [categoryScores, setCategoryScores] = useState<{ player_id: string; category: string; points: number }[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -49,6 +50,7 @@ export default function EpisodeDetailPage() {
           totals[s.player_id] = (totals[s.player_id] || 0) + s.points;
         });
         setScores(totals);
+        setCategoryScores(scoresRes.data);
       }
 
       setLoading(false);
@@ -70,6 +72,10 @@ export default function EpisodeDetailPage() {
     const result = results.find((r) => r.category === category);
     if (!pick || !result) return null;
     return pick.contestant_id === result.contestant_id;
+  };
+  const getPickScore = (playerId: string, category: string) => {
+    const score = categoryScores.find((s) => s.player_id === playerId && s.category === category);
+    return score?.points ?? null;
   };
 
   if (loading) {
@@ -94,6 +100,9 @@ export default function EpisodeDetailPage() {
   }
 
   const scored = episode.status === 'scored';
+  const allCategories = episode?.winner_guess_points
+    ? [...CATEGORIES, { ...WINNER_GUESS_CATEGORY, points: episode.winner_guess_points }]
+    : CATEGORIES;
 
   return (
     <div className="space-y-6">
@@ -104,6 +113,18 @@ export default function EpisodeDetailPage() {
         <h1 className="font-display text-2xl text-ink">{episode.theme}</h1>
         <p className="text-ink-muted text-sm mt-0.5">Week {episode.week_number}</p>
       </div>
+
+      {episode.status === 'upcoming' && (
+        <div className="card p-8 text-center animate-fade-up">
+          <div className="w-14 h-14 rounded-2xl bg-cream-dark flex items-center justify-center mx-auto mb-4">
+            <Clock size={24} className="text-ink-muted" />
+          </div>
+          <h3 className="font-display text-xl text-ink mb-1">Coming Soon</h3>
+          <p className="text-sm text-ink-muted">
+            Picks will open before this episode airs.
+          </p>
+        </div>
+      )}
 
       {/* Results + Picks Grid */}
       {(scored || results.length > 0) && (
@@ -125,8 +146,8 @@ export default function EpisodeDetailPage() {
                 </tr>
               </thead>
               <tbody>
-                {CATEGORIES.map((cat, i) => (
-                  <tr key={cat.key} className={i < CATEGORIES.length - 1 ? 'border-b border-border/50' : ''}>
+                {allCategories.map((cat, i) => (
+                  <tr key={cat.key} className={i < allCategories.length - 1 ? 'border-b border-border/50' : ''}>
                     <td className="p-3 pl-4">
                       <div className="font-medium text-ink">{cat.label}</div>
                       <div className="text-xs text-ink-muted">{cat.points} pts</div>
@@ -134,6 +155,7 @@ export default function EpisodeDetailPage() {
                     <td className="p-3 font-semibold text-amber-dark">{getResult(cat.key)}</td>
                     {players.map((p) => {
                       const correct = isCorrect(p.id, cat.key);
+                      const pickScore = getPickScore(p.id, cat.key);
                       return (
                         <td key={p.id} className="p-3">
                           <div className="flex items-center gap-1.5">
@@ -141,7 +163,10 @@ export default function EpisodeDetailPage() {
                               {getPlayerPick(p.id, cat.key)}
                             </span>
                             {correct === true && <Check size={13} className="text-sage" />}
-                            {correct === false && <X size={13} className="text-ink-faint" />}
+                            {correct === false && pickScore !== null && pickScore < 0 && (
+                              <span className="text-xs font-semibold text-terracotta">{pickScore}</span>
+                            )}
+                            {correct === false && (pickScore === null || pickScore >= 0) && <X size={13} className="text-ink-faint" />}
                           </div>
                         </td>
                       );
@@ -187,6 +212,12 @@ export default function EpisodeDetailPage() {
       {!scored && episode.status === 'locked' && picks.length > 0 && (
         <div className="card p-5 text-center">
           <p className="text-ink-muted text-sm">Picks are locked. Results will be entered after the episode.</p>
+        </div>
+      )}
+
+      {!scored && episode.status === 'locked' && picks.length === 0 && (
+        <div className="card p-5 text-center">
+          <p className="text-ink-muted text-sm">This episode is locked. No picks were submitted.</p>
         </div>
       )}
 

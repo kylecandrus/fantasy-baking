@@ -101,7 +101,6 @@ export default function AdminPlayersPage() {
                       </span>
                       <div>
                         <span className="font-semibold text-ink">{p.name}</span>
-                        {p.is_admin && <span className="ml-2 badge bg-amber-subtle text-amber-dark">Admin</span>}
                       </div>
                     </div>
                     <button onClick={() => deletePlayer(p)} className="p-1.5 rounded-lg text-ink-faint hover:text-terracotta hover:bg-terracotta-subtle transition-colors">

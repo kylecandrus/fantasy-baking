@@ -30,18 +30,27 @@ export default function EpisodesPage() {
     );
   }
 
+  const scoredCount = episodes.filter((e) => e.status === 'scored').length;
+
   return (
-    <div className="space-y-5">
-      <h1 className="font-display text-2xl text-ink">Episodes</h1>
+    <div className="space-y-6">
+      <header>
+        <h1 className="font-display text-3xl md:text-[2.25rem] text-ink leading-tight">Episodes</h1>
+        <p className="text-ink-secondary mt-1 text-sm">
+          {episodes.length === 0
+            ? 'Nothing on the schedule yet.'
+            : `${episodes.length} ${episodes.length === 1 ? 'episode' : 'episodes'} · ${scoredCount} scored`}
+        </p>
+      </header>
       {episodes.length === 0 ? (
-        <div className="card p-8 text-center">
-          <div className="w-14 h-14 rounded-2xl bg-cream-dark flex items-center justify-center mx-auto mb-4">
-            <Tv size={24} className="text-ink-muted" />
+        <div className="rounded-[16px] bg-cream-dark/60 p-10 text-center">
+          <div className="w-12 h-12 rounded-full bg-cream flex items-center justify-center mx-auto mb-4">
+            <Tv size={20} className="text-ink-muted" />
           </div>
-          <p className="text-ink-muted">No episodes created yet.</p>
+          <p className="text-ink-secondary">The kitchen&apos;s not open yet — add your first episode in Admin.</p>
         </div>
       ) : (
-        <div className="space-y-2 stagger">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 stagger">
           {episodes.map((ep) => (
             <EpisodeCard key={ep.id} episode={ep} />
           ))}

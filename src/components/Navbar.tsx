@@ -31,12 +31,15 @@ export default function Navbar() {
   return (
     <>
       {/* Desktop nav */}
-      <nav className="hidden md:block sticky top-0 z-50 bg-cream/80 backdrop-blur-xl border-b border-border">
-        <div className="max-w-3xl mx-auto px-4 flex items-center justify-between h-14">
+      <nav className="hidden md:block sticky top-0 z-50 bg-cream/85 backdrop-blur-xl border-b border-border">
+        <div className="max-w-4xl mx-auto px-6 flex items-center justify-between h-14">
           <Link href="/" className="flex items-center gap-2.5">
-            <div className="w-7 h-7 rounded-lg bg-amber flex items-center justify-center">
-              <span className="text-white text-xs font-bold">FB</span>
-            </div>
+            <span
+              aria-hidden
+              className="w-8 h-8 rounded-full bg-amber-subtle border border-amber/20 flex items-center justify-center font-display text-base text-amber-dark leading-none pb-0.5"
+            >
+              B
+            </span>
             <span className="font-display text-lg text-ink">Fantasy Bake Off</span>
           </Link>
           <div className="flex items-center gap-1">

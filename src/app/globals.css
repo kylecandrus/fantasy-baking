@@ -14,6 +14,7 @@
   --color-terracotta-subtle: #FDF2F1;
   --color-sage: #5B8C5A;
   --color-sage-light: #8FBF8E;
+  --color-sage-dark: #4A7A49;
   --color-sage-subtle: #EFF6EF;
   --color-ink: #2D1B0E;
   --color-ink-secondary: #6B5B4D;
@@ -23,6 +24,11 @@
   --color-border-strong: #D9D0C5;
   --font-sans: 'DM Sans', system-ui, -apple-system, sans-serif;
   --font-display: 'DM Serif Display', Georgia, serif;
+
+  /* Radius scale */
+  --radius-control: 6px;
+  --radius-card: 12px;
+  --radius-hero: 20px;
 }
 
 /* Base */
@@ -30,11 +36,13 @@ body {
   background: var(--color-cream);
   color: var(--color-ink);
   font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Gingham background texture */
+/* Gingham — quieted: 64px squares, 2.5% opacity, top-only fade */
 body::before {
   content: '';
   position: fixed;
@@ -42,26 +50,58 @@ body::before {
   pointer-events: none;
   z-index: -1;
   background-image:
-    linear-gradient(to right, rgba(185, 130, 40, 0.06) 50%, transparent 50%),
-    linear-gradient(to bottom, rgba(185, 130, 40, 0.06) 50%, transparent 50%);
-  background-size: 48px 48px;
-  background-blend-mode: darken;
+    linear-gradient(to right, rgba(185, 130, 40, 0.025) 50%, transparent 50%),
+    linear-gradient(to bottom, rgba(185, 130, 40, 0.025) 50%, transparent 50%);
+  background-size: 64px 64px;
+  -webkit-mask-image: linear-gradient(to bottom, black, transparent 480px);
+          mask-image: linear-gradient(to bottom, black, transparent 480px);
 }
 
 h1, h2, h3 {
   font-family: var(--font-display);
-  letter-spacing: -0.01em;
+  letter-spacing: -0.015em;
+  color: var(--color-ink);
 }
 
-/* Cards */
+/* Eyebrow label */
+.eyebrow {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-ink-muted);
+}
+
+/* Cards — depth via surface tone, not borders */
 .card {
   background: var(--color-surface);
-  border-radius: 16px;
+  border-radius: var(--radius-card);
+  box-shadow: 0 1px 2px rgba(45, 27, 14, 0.04);
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+/* Hero card — the focal point on a page */
+.card-hero {
+  background: var(--color-surface);
+  border-radius: var(--radius-hero);
   box-shadow:
     0 1px 2px rgba(45, 27, 14, 0.04),
-    0 4px 12px rgba(45, 27, 14, 0.03);
-  border: 1px solid var(--color-border);
-  transition: box-shadow 0.2s ease, transform 0.2s ease;
+    0 12px 32px rgba(45, 27, 14, 0.06);
+  position: relative;
+  overflow: hidden;
+}
+.card-hero::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(120% 80% at 0% 0%, rgba(200, 144, 46, 0.06), transparent 60%);
+  pointer-events: none;
+}
+
+/* Recede — flat, no shadow, sits below the body conversation */
+.card-recede {
+  background: var(--color-cream-dark);
+  border-radius: var(--radius-card);
 }
 
 .card-interactive {
@@ -86,7 +126,7 @@ h1, h2, h3 {
   font-weight: 600;
   font-size: 0.9375rem;
   padding: 0.75rem 1.5rem;
-  border-radius: 12px;
+  border-radius: var(--radius-card);
   transition: all 0.15s ease;
   cursor: pointer;
   line-height: 1;
@@ -129,19 +169,19 @@ h1, h2, h3 {
   color: white;
 }
 .btn-success:hover:not(:disabled) {
-  background: #4A7A49;
+  background: var(--color-sage-dark);
 }
 
 .btn-sm {
   font-size: 0.8125rem;
   padding: 0.5rem 1rem;
-  border-radius: 10px;
+  border-radius: var(--radius-control);
 }
 
 .btn-lg {
   font-size: 1.0625rem;
   padding: 0.875rem 1.75rem;
-  border-radius: 14px;
+  border-radius: var(--radius-card);
 }
 
 /* Badge */
@@ -150,7 +190,7 @@ h1, h2, h3 {
   align-items: center;
   gap: 0.25rem;
   padding: 0.25rem 0.625rem;
-  border-radius: 100px;
+  border-radius: 999px;
   font-size: 0.6875rem;
   font-weight: 600;
   letter-spacing: 0.02em;
@@ -162,7 +202,7 @@ h1, h2, h3 {
   width: 100%;
   padding: 0.75rem 1rem;
   border: 1.5px solid var(--color-border);
-  border-radius: 12px;
+  border-radius: var(--radius-card);
   background: var(--color-surface);
   font-size: 0.9375rem;
   font-family: inherit;
@@ -211,7 +251,7 @@ textarea.input {
   animation: pulse-soft 2s ease-in-out infinite;
 }
 
-/* Stagger children */
+/* Stagger children — capped at 4 visible delays */
 .stagger > * {
   animation: fadeUp 0.4s ease-out both;
 }
@@ -219,10 +259,7 @@ textarea.input {
 .stagger > *:nth-child(2) { animation-delay: 60ms; }
 .stagger > *:nth-child(3) { animation-delay: 120ms; }
 .stagger > *:nth-child(4) { animation-delay: 180ms; }
-.stagger > *:nth-child(5) { animation-delay: 240ms; }
-.stagger > *:nth-child(6) { animation-delay: 300ms; }
-.stagger > *:nth-child(7) { animation-delay: 360ms; }
-.stagger > *:nth-child(8) { animation-delay: 420ms; }
+.stagger > *:nth-child(n+5) { animation-delay: 220ms; }
 
 /* Loading skeleton */
 .skeleton {

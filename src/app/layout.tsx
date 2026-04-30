@@ -12,7 +12,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en">
       <body className="min-h-dvh flex flex-col">
         <Navbar />
-        <main className="flex-1 w-full max-w-3xl mx-auto px-4 pt-4 pb-28 md:pb-8 md:pt-6">
+        <main className="flex-1 w-full max-w-4xl mx-auto px-4 pt-4 pb-28 md:px-6 md:pb-10 md:pt-8">
           {children}
         </main>
       </body>

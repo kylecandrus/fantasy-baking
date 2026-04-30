@@ -3,19 +3,19 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Player, getPlayerColor } from '@/lib/types';
-import { Crown, Medal } from 'lucide-react';
+import { Crown } from 'lucide-react';
 
 interface LeaderboardEntry {
   player: Player;
   total: number;
+  weekly: number;
 }
 
-const RANK_BG = [
-  'bg-amber-subtle border-amber/25',
-  'bg-cream-dark border-border',
-  'bg-cream-dark border-border',
-  'bg-surface border-border',
-];
+function getInitials(name: string) {
+  const parts = name.trim().split(/\s+/);
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[1][0]).toUpperCase();
+}
 
 export default function Leaderboard({ compact = false }: { compact?: boolean }) {
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
@@ -23,17 +23,28 @@ export default function Leaderboard({ compact = false }: { compact?: boolean }) 
 
   useEffect(() => {
     async function load() {
-      const { data: players } = await supabase.from('players').select('*').order('name');
-      const { data: scores } = await supabase.from('scores').select('*');
+      const [{ data: players }, { data: scores }, { data: scoredEpisodes }] = await Promise.all([
+        supabase.from('players').select('*').order('name'),
+        supabase.from('scores').select('*'),
+        supabase.from('episodes').select('id, week_number').eq('status', 'scored').order('week_number', { ascending: false }).limit(1),
+      ]);
 
       if (!players) { setLoading(false); return; }
 
       const totals: Record<string, number> = {};
-      players.forEach((p) => (totals[p.id] = 0));
-      scores?.forEach((s) => (totals[s.player_id] = (totals[s.player_id] || 0) + s.points));
+      const weekly: Record<string, number> = {};
+      const latestEpId = scoredEpisodes?.[0]?.id;
+
+      players.forEach((p) => { totals[p.id] = 0; weekly[p.id] = 0; });
+      scores?.forEach((s) => {
+        totals[s.player_id] = (totals[s.player_id] || 0) + s.points;
+        if (latestEpId && s.episode_id === latestEpId) {
+          weekly[s.player_id] = (weekly[s.player_id] || 0) + s.points;
+        }
+      });
 
       const sorted = players
-        .map((player) => ({ player, total: totals[player.id] || 0 }))
+        .map((player) => ({ player, total: totals[player.id] || 0, weekly: weekly[player.id] || 0 }))
         .sort((a, b) => b.total - a.total);
 
       setEntries(sorted);
@@ -44,16 +55,11 @@ export default function Leaderboard({ compact = false }: { compact?: boolean }) 
 
   if (loading) {
     return (
-      <div className={compact ? '' : 'card'}>
-        {!compact && (
-          <div className="px-5 py-4 border-b border-border">
-            <div className="skeleton h-6 w-28" />
-          </div>
-        )}
-        <div className={`${compact ? '' : 'p-4'} space-y-2`}>
-          {[...Array(4)].map((_, i) => (
-            <div key={i} className="skeleton h-14 w-full" />
-          ))}
+      <div className="space-y-3">
+        {!compact && <div className="skeleton h-4 w-24" />}
+        <div className="skeleton h-20 w-full" />
+        <div className="space-y-1.5">
+          {[...Array(3)].map((_, i) => <div key={i} className="skeleton h-12 w-full" />)}
         </div>
       </div>
     );
@@ -61,55 +67,103 @@ export default function Leaderboard({ compact = false }: { compact?: boolean }) 
 
   if (entries.length === 0) {
     return (
-      <div className={compact ? '' : 'card'}>
+      <div className="space-y-3">
         {!compact && (
-          <div className="px-5 py-4 border-b border-border flex items-center gap-2">
-            <Crown size={18} className="text-amber" />
-            <h2 className="font-display text-lg text-ink">Standings</h2>
+          <div className="flex items-center gap-2">
+            <Crown size={16} className="text-amber" />
+            <h2 className="eyebrow">Standings</h2>
           </div>
         )}
-        <div className={compact ? 'py-4' : 'p-6'}>
-          <p className="text-center text-ink-muted text-sm">No scores yet</p>
-        </div>
+        <p className="text-center text-ink-muted text-sm py-6">The judges haven&apos;t scored yet.</p>
       </div>
     );
   }
 
+  const [leader, ...rest] = entries;
+  const hasScores = leader.total > 0;
+  const leaderColor = getPlayerColor(leader.player.color);
+
   return (
-    <div className={compact ? '' : 'card overflow-hidden'}>
+    <section className="space-y-3">
       {!compact && (
-        <div className="px-5 py-4 border-b border-border flex items-center gap-2">
-          <Crown size={18} className="text-amber" />
-          <h2 className="font-display text-lg text-ink">Standings</h2>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Crown size={14} className="text-amber" />
+            <h2 className="eyebrow">Standings</h2>
+          </div>
         </div>
       )}
-      <div className={`${compact ? '' : 'p-3'} space-y-1.5 stagger`}>
-        {entries.map((entry, i) => {
-          const color = getPlayerColor(entry.player.color);
-          return (
-            <div
-              key={entry.player.id}
-              className={`flex items-center gap-3 p-3 rounded-xl border ${RANK_BG[i] || RANK_BG[3]}`}
-            >
-              <div className="w-7 text-center shrink-0">
-                {i === 0 && entry.total > 0 ? (
-                  <Medal size={18} className="text-amber mx-auto" />
-                ) : (
-                  <span className="text-sm font-semibold text-ink-muted">{i + 1}</span>
-                )}
-              </div>
-              <span className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0" style={{ background: color.bg, color: color.text }}>
-                {entry.player.name[0]}
-              </span>
-              <span className="font-semibold text-ink flex-1">{entry.player.name}</span>
-              <span className={`font-bold tabular-nums ${i === 0 ? 'text-amber-dark text-lg' : 'text-ink-secondary'}`}>
-                {entry.total}
-                <span className="text-ink-secondary font-medium text-xs ml-0.5">pts</span>
-              </span>
-            </div>
-          );
-        })}
+
+      {/* Leader — the page within the page */}
+      <div
+        className="relative rounded-[16px] p-4 md:p-5 flex items-center gap-4 overflow-hidden"
+        style={{
+          background: hasScores
+            ? `linear-gradient(135deg, ${leaderColor.bg}14 0%, var(--color-amber-subtle) 100%)`
+            : 'var(--color-cream-dark)',
+        }}
+      >
+        <span
+          className="w-12 h-12 md:w-14 md:h-14 rounded-full flex items-center justify-center text-base font-bold shrink-0 shadow-sm"
+          style={{ background: leaderColor.bg, color: leaderColor.text }}
+        >
+          {getInitials(leader.player.name)}
+        </span>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1.5">
+            <span className="eyebrow text-amber-dark">
+              {hasScores ? '1st place' : 'No scores yet'}
+            </span>
+          </div>
+          <p className="font-display text-xl md:text-2xl text-ink leading-tight truncate">
+            {leader.player.name}
+          </p>
+          {hasScores && leader.weekly !== 0 && (
+            <p className="text-xs text-ink-secondary mt-0.5 tabular-nums">
+              {leader.weekly > 0 ? '+' : ''}{leader.weekly} this week
+            </p>
+          )}
+        </div>
+        <div className="text-right shrink-0">
+          <div className="font-display text-3xl md:text-4xl text-ink leading-none tabular-nums">
+            {leader.total}
+          </div>
+          <div className="text-[10px] uppercase tracking-wider text-ink-muted font-semibold mt-1">
+            points
+          </div>
+        </div>
       </div>
-    </div>
+
+      {/* Rest of the field */}
+      {rest.length > 0 && (
+        <ul className="divide-y divide-border/60">
+          {rest.map((entry, i) => {
+            const color = getPlayerColor(entry.player.color);
+            const rank = i + 2;
+            const gap = leader.total - entry.total;
+            return (
+              <li key={entry.player.id} className="flex items-center gap-3 py-2.5 px-2">
+                <span className="w-5 text-xs font-semibold text-ink-muted tabular-nums text-right">
+                  {rank}
+                </span>
+                <span
+                  className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
+                  style={{ background: color.bg, color: color.text }}
+                >
+                  {getInitials(entry.player.name)}
+                </span>
+                <span className="font-medium text-ink flex-1 truncate">{entry.player.name}</span>
+                {hasScores && gap > 0 && (
+                  <span className="text-xs text-ink-faint tabular-nums">−{gap}</span>
+                )}
+                <span className="font-semibold tabular-nums text-ink min-w-[2rem] text-right">
+                  {entry.total}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
   );
 }

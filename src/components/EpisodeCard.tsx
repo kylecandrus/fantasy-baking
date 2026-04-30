@@ -11,9 +11,26 @@ const STATUS_CONFIG: Record<EpisodeStatus, { label: string; className: string; i
   scored: { label: 'Scored', className: 'bg-amber-subtle text-amber-dark', icon: CheckCircle2 },
 };
 
-export default function EpisodeCard({ episode }: { episode: Episode }) {
+interface EpisodeCardProps {
+  episode: Episode;
+  variant?: 'list' | 'hero';
+}
+
+export default function EpisodeCard({ episode, variant = 'list' }: EpisodeCardProps) {
   const config = STATUS_CONFIG[episode.status];
   const Icon = config.icon;
+
+  if (variant === 'hero') {
+    return (
+      <div className="flex items-baseline gap-3">
+        <span className="eyebrow shrink-0">Week {episode.week_number}</span>
+        <span className={`badge ${config.className}`}>
+          <Icon size={10} className={episode.status === 'open' ? 'animate-pulse-soft' : ''} />
+          {config.label}
+        </span>
+      </div>
+    );
+  }
 
   return (
     <Link href={`/episodes/${episode.week_number}`}>

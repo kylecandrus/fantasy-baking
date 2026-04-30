@@ -68,6 +68,8 @@ export default function PicksPage() {
     ? [...CATEGORIES, { ...WINNER_GUESS_CATEGORY, points: episode.winner_guess_points }]
     : CATEGORIES;
 
+  const filledCount = Object.keys(picks).filter((k) => picks[k]).length;
+
   async function handleSave() {
     if (!playerId || !episode) return;
     if (filledCount < allCategories.length) {
@@ -115,10 +117,10 @@ export default function PicksPage() {
   if (!playerId) {
     return (
       <div className="space-y-6">
-        <div>
-          <h1 className="font-display text-2xl text-ink">Make Your Picks</h1>
-          <p className="text-ink-muted text-sm mt-0.5">Select your name first</p>
-        </div>
+        <header>
+          <h1 className="font-display text-3xl text-ink leading-tight">Make your picks</h1>
+          <p className="text-ink-secondary mt-1 text-sm">Select your name first.</p>
+        </header>
         <PlayerSelector />
       </div>
     );
@@ -127,99 +129,119 @@ export default function PicksPage() {
   if (!episode) {
     return (
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <h1 className="font-display text-2xl text-ink">Make Your Picks</h1>
+        <div className="flex items-start justify-between gap-3">
+          <header>
+            <h1 className="font-display text-3xl text-ink leading-tight">Make your picks</h1>
+            <p className="text-ink-secondary mt-1 text-sm">No episode is open right now.</p>
+          </header>
           <PlayerSelector compact />
         </div>
-        <div className="card p-8 text-center">
-          <div className="w-14 h-14 rounded-2xl bg-cream-dark flex items-center justify-center mx-auto mb-4">
-            <AlertCircle size={24} className="text-ink-muted" />
+        <div className="rounded-[16px] bg-cream-dark/60 p-8 text-center">
+          <div className="w-12 h-12 rounded-full bg-cream flex items-center justify-center mx-auto mb-4">
+            <AlertCircle size={20} className="text-ink-muted" />
           </div>
-          <h3 className="font-display text-xl text-ink mb-1">No open episode</h3>
-          <p className="text-sm text-ink-muted">Check back before the next episode airs.</p>
+          <h3 className="font-display text-xl text-ink mb-1">Picks are closed</h3>
+          <p className="text-sm text-ink-secondary">Check back before the next episode airs.</p>
         </div>
       </div>
     );
   }
 
-  const filledCount = Object.keys(picks).filter((k) => picks[k]).length;
-
   return (
-    <div className="space-y-5">
+    <div className="space-y-6 pb-24 md:pb-32">
       <div className="flex items-start justify-between gap-3">
-        <div>
-          <h1 className="font-display text-2xl text-ink">Make Your Picks</h1>
-          <p className="text-ink-muted text-sm mt-0.5">
-            Week {episode.week_number} &middot; {episode.theme}
+        <header>
+          <h1 className="font-display text-3xl text-ink leading-tight">Make your picks</h1>
+          <p className="text-ink-secondary mt-1 text-sm">
+            Week {episode.week_number} · {episode.theme}
           </p>
-        </div>
+        </header>
         <PlayerSelector compact />
       </div>
 
-      {existingPicks && (
-        <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-amber-subtle border border-amber/15 text-sm text-amber-dark">
-          <AlertCircle size={16} className="shrink-0" />
-          You have existing picks. Tap to update them.
-        </div>
-      )}
+      {/* Persistent helper — always visible, not conditional */}
+      <div className="rounded-[12px] bg-amber-subtle/60 px-4 py-3 text-xs text-ink-secondary leading-relaxed flex gap-2.5">
+        <Lock size={14} className="shrink-0 mt-0.5 text-amber-dark" />
+        <span>
+          Lock <strong className="text-ink">one</strong> category for <strong className="text-ink">2× points</strong> if correct — but lose half if wrong.
+          {existingPicks && <span className="text-ink-muted"> · Your picks are saved; tap to update.</span>}
+        </span>
+      </div>
 
-      <div className="space-y-4 stagger">
+      {/* Categories — desktop 2-column */}
+      <div className="grid grid-cols-1 md:grid-cols-2 md:gap-x-5 gap-y-5 stagger">
         {allCategories.map((cat) => {
           const isLocked = lockedCategory === cat.key;
           const hasPick = !!picks[cat.key];
+          const pool = cat.key === 'winner_guess' ? contestants : activeContestants;
           return (
-            <div key={cat.key} className={`card p-4 transition-all ${isLocked ? 'ring-2 ring-amber/40 border-amber/30' : ''}`}>
+            <div
+              key={cat.key}
+              className={`rounded-[16px] p-4 md:p-5 transition-colors ${
+                isLocked
+                  ? 'bg-amber-subtle'
+                  : 'bg-surface shadow-[0_1px_2px_rgba(45,27,14,0.04)]'
+              }`}
+            >
               <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <h3 className="font-semibold text-ink">{cat.label}</h3>
-                  {isLocked && (
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-amber-dark bg-amber-subtle px-1.5 py-0.5 rounded">
-                      Locked 2x
-                    </span>
-                  )}
-                </div>
+                <h3 className="font-display text-lg text-ink leading-none">{cat.label}</h3>
                 <div className="flex items-center gap-2">
                   {hasPick && (
                     <button
                       onClick={() => setLockedCategory(isLocked ? null : cat.key)}
-                      className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                      aria-pressed={isLocked}
+                      className={`flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-semibold uppercase tracking-wider transition-all ${
                         isLocked
-                          ? 'text-white bg-amber shadow-sm'
-                          : 'text-ink-muted border border-border hover:border-amber/40 hover:text-amber-dark hover:bg-amber-subtle/50'
+                          ? 'text-white bg-amber'
+                          : 'text-ink-muted hover:text-amber-dark hover:bg-amber-subtle'
                       }`}
                     >
-                      <Lock size={13} />
+                      <Lock size={11} />
                       {isLocked ? 'Locked' : 'Lock'}
                     </button>
                   )}
-                  <span className="text-xs font-medium text-ink-muted bg-cream-dark px-2 py-0.5 rounded-md">
-                    {isLocked ? `${cat.points * 2}` : cat.points} pts
+                  <span className={`text-[11px] font-semibold tabular-nums px-2 py-1 rounded-md ${
+                    isLocked ? 'bg-amber text-white' : 'bg-cream-dark text-ink-secondary'
+                  }`}>
+                    {isLocked ? `× 2 = ${cat.points * 2}` : `${cat.points} pts`}
                   </span>
                 </div>
               </div>
-              <div className="grid grid-cols-3 sm:grid-cols-4 gap-1.5">
-                {(cat.key === 'winner_guess' ? contestants : activeContestants).map((c) => {
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                {pool.map((c) => {
                   const selected = picks[cat.key] === c.id;
+                  const dim = hasPick && !selected;
                   return (
                     <button
                       key={c.id}
-                      onClick={() => setPicks((prev) => ({
-                        ...prev,
-                        [cat.key]: prev[cat.key] === c.id ? '' : c.id,
-                      }))}
-                      className={`relative p-2 rounded-xl text-sm font-medium text-center transition-all border cursor-pointer ${
+                      onClick={() =>
+                        setPicks((prev) => ({
+                          ...prev,
+                          [cat.key]: prev[cat.key] === c.id ? '' : c.id,
+                        }))
+                      }
+                      className={`relative p-2 rounded-[10px] text-sm text-center transition-all cursor-pointer ${
                         selected
-                          ? 'bg-amber-subtle border-amber text-amber-dark ring-1 ring-amber/20'
-                          : 'bg-surface border-border text-ink-secondary hover:border-ink-faint'
+                          ? 'bg-surface ring-2 ring-amber text-ink font-semibold shadow-sm'
+                          : `bg-cream-dark/60 hover:bg-cream-dark text-ink-secondary ${dim ? 'opacity-50 hover:opacity-100' : ''}`
                       }`}
                     >
                       {selected && (
-                        <Check size={12} className="absolute top-1.5 right-1.5 text-amber" />
+                        <Check size={12} strokeWidth={3} className="absolute top-1.5 right-1.5 text-amber" />
                       )}
-                      {c.image_url && (
-                        <img src={c.image_url} alt={c.name} className="w-10 h-10 rounded-full mx-auto mb-1 object-cover" />
+                      {c.image_url ? (
+                        <img
+                          src={c.image_url}
+                          alt={c.name}
+                          className="w-12 h-12 rounded-full mx-auto mb-1.5 object-cover"
+                        />
+                      ) : (
+                        <div className="w-12 h-12 rounded-full mx-auto mb-1.5 bg-cream flex items-center justify-center text-ink-muted text-sm font-semibold">
+                          {c.name[0]}
+                        </div>
                       )}
-                      {c.name}
+                      <span className="block leading-tight">{c.name}</span>
                     </button>
                   );
                 })}
@@ -229,42 +251,40 @@ export default function PicksPage() {
         })}
       </div>
 
-      <div className="sticky bottom-20 md:bottom-4 z-40 pt-2">
-        {!lockedCategory && filledCount > 0 && (
-          <p className="text-xs text-ink-muted text-center mb-2">
-            Tap the <Lock size={10} className="inline" /> icon on a category to lock it for 2x points (but lose half if wrong)
-          </p>
-        )}
-        {error && (
-          <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-red-50 border border-red-200 text-sm text-red-700 mb-2">
-            <AlertCircle size={16} className="shrink-0" />
-            {error}
-          </div>
-        )}
-        <button
-          onClick={handleSave}
-          disabled={saving || filledCount === 0}
-          className={`btn btn-lg w-full shadow-lg transition-all ${
-            saved
-              ? 'btn-success'
-              : 'btn-primary'
-          }`}
-        >
-          {saving ? (
-            'Saving...'
-          ) : saved ? (
-            <>
-              <Check size={18} />
-              Picks Saved
-            </>
-          ) : (
-            <>
-              <Target size={18} />
-              {existingPicks ? 'Update' : 'Submit'} Picks
-              <span className="ml-1 opacity-60">{filledCount}/{allCategories.length}</span>
-            </>
+      {/* Bottom action bar — fixed, integrates with mobile nav stacking */}
+      <div className="fixed bottom-16 md:bottom-0 left-0 right-0 z-40 pointer-events-none">
+        <div className="max-w-4xl mx-auto px-4 md:px-6 pb-3 md:pb-4 pt-2 pointer-events-auto">
+          {error && (
+            <div className="flex items-center gap-2 px-4 py-3 rounded-[12px] bg-terracotta-subtle border border-terracotta/20 text-sm text-terracotta mb-2 shadow-sm">
+              <AlertCircle size={16} className="shrink-0" />
+              {error}
+            </div>
           )}
-        </button>
+          <div className="bg-cream/95 backdrop-blur-md rounded-[14px] p-1.5 shadow-[0_8px_24px_rgba(45,27,14,0.08)]">
+            <button
+              onClick={handleSave}
+              disabled={saving || filledCount === 0}
+              className={`btn btn-lg w-full ${saved ? 'btn-success' : 'btn-primary'}`}
+            >
+              {saving ? (
+                'Saving…'
+              ) : saved ? (
+                <>
+                  <Check size={18} />
+                  Picks saved
+                </>
+              ) : (
+                <>
+                  <Target size={18} />
+                  {existingPicks ? 'Update' : 'Submit'} picks
+                  <span className="ml-1 opacity-70 tabular-nums">
+                    {filledCount}/{allCategories.length}
+                  </span>
+                </>
+              )}
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );

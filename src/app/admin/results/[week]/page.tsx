@@ -8,6 +8,7 @@ import { Episode, Contestant, Pick, Result, PickCategory, CATEGORIES, WINNER_GUE
 import { useAdmin } from '@/hooks/usePlayer';
 import { calculatePickScore, calculateWinnerGuessScore } from '@/lib/scoring';
 import { ArrowLeft, Check, Save, Trophy, AlertCircle, Crown, Ban } from 'lucide-react';
+import ContestantAvatar from '@/components/ContestantAvatar';
 
 // Star Baker / Technical Winner / Technical Loser always happen. A Hollywood handshake
 // is rare and some weeks nobody goes home, so those two can be left as "None this week".
@@ -364,7 +365,8 @@ export default function AdminResultsPage() {
                       }`}
                     >
                       {selected && <Check size={12} className="absolute top-1.5 right-1.5 text-amber" />}
-                      {c.name}
+                      <ContestantAvatar contestant={c} className="w-10 h-10 text-sm mx-auto mb-1.5" />
+                      <span className="block leading-tight">{c.name}</span>
                     </button>
                   );
                 })}

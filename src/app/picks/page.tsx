@@ -15,6 +15,7 @@ import { usePlayer } from '@/hooks/usePlayer';
 import PlayerSelector from '@/components/PlayerSelector';
 import DeadlineNotice from '@/components/DeadlineNotice';
 import { Target, Check, AlertCircle, Lock, RefreshCw } from 'lucide-react';
+import ContestantAvatar from '@/components/ContestantAvatar';
 
 /** Every category a pick row can hold — used to clean up cleared picks on save. */
 const ALL_PICK_CATEGORIES: PickCategory[] = [
@@ -375,17 +376,7 @@ export default function PicksPage() {
                       {selected && (
                         <Check size={12} strokeWidth={3} className="absolute top-1.5 right-1.5 text-amber" />
                       )}
-                      {c.image_url ? (
-                        <img
-                          src={c.image_url}
-                          alt={c.name}
-                          className="w-12 h-12 rounded-full mx-auto mb-1.5 object-cover"
-                        />
-                      ) : (
-                        <div className="w-12 h-12 rounded-full mx-auto mb-1.5 bg-cream flex items-center justify-center text-ink-muted text-sm font-semibold">
-                          {c.name[0]}
-                        </div>
-                      )}
+                      <ContestantAvatar contestant={c} className="w-12 h-12 text-sm mx-auto mb-1.5" />
                       <span className="block leading-tight">{c.name}</span>
                     </button>
                   );

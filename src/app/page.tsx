@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
-import { Episode, Player, CATEGORIES } from '@/lib/types';
+import { Episode, CATEGORIES } from '@/lib/types';
 import { isDeadlinePassed } from '@/lib/deadline';
 import { useNow } from '@/lib/useNow';
 import { usePlayer } from '@/hooks/usePlayer';
@@ -73,28 +73,8 @@ export default function Home() {
     } else if (featured?.status === 'locked') {
       setSubhead({ text: `Week ${featured.week_number} is locked. Tune in for the results.` });
     } else if (featured?.status === 'scored') {
-      // Show top of leaderboard if available.
-      const [{ data: players }, { data: scores }] = await Promise.all([
-        supabase.from('players').select('*'),
-        supabase.from('scores').select('*'),
-      ]);
-      if (players && players.length > 0) {
-        const totals: Record<string, number> = {};
-        players.forEach((p: Player) => (totals[p.id] = 0));
-        scores?.forEach((s) => (totals[s.player_id] = (totals[s.player_id] || 0) + s.points));
-        const sorted = [...players].sort((a, b) => (totals[b.id] || 0) - (totals[a.id] || 0));
-        const leader = sorted[0];
-        const second = sorted[1];
-        if (leader && totals[leader.id] > 0) {
-          const lead = totals[leader.id] - (second ? totals[second.id] : 0);
-          setSubhead({
-            tone: 'live',
-            text: lead === 0
-              ? `${leader.name} and ${second.name} are tied at ${totals[leader.id]} points.`
-              : `${leader.name} leads by ${lead} point${lead === 1 ? '' : 's'}.`,
-          });
-        }
-      }
+      // Deliberately vague — who's leading is a spoiler until the viewer has watched.
+      setSubhead({ text: `Week ${featured.week_number} results are in.` });
     } else if (featured?.status === 'upcoming') {
       setSubhead({ text: `Week ${featured.week_number} is up next.` });
     }
@@ -178,7 +158,7 @@ export default function Home() {
               href={`/episodes/${currentEpisode.week_number}`}
               className="btn btn-secondary w-full mt-6 relative z-10"
             >
-              See your picks
+              See everyone&apos;s picks
               <ArrowRight size={16} className="ml-auto opacity-60" />
             </Link>
           )}

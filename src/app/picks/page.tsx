@@ -14,8 +14,11 @@ import { useNow } from '@/lib/useNow';
 import { usePlayer } from '@/hooks/usePlayer';
 import PlayerSelector from '@/components/PlayerSelector';
 import DeadlineNotice from '@/components/DeadlineNotice';
+import Link from 'next/link';
 import { Target, Check, AlertCircle, Lock, RefreshCw } from 'lucide-react';
 import ContestantAvatar from '@/components/ContestantAvatar';
+import SpoilerGate from '@/components/SpoilerGate';
+import { useWatched } from '@/hooks/useWatched';
 
 /** Every category a pick row can hold — used to clean up cleared picks on save. */
 const ALL_PICK_CATEGORIES: PickCategory[] = [
@@ -27,6 +30,8 @@ export default function PicksPage() {
   const { playerId, loaded } = usePlayer();
   const now = useNow();
   const [episode, setEpisode] = useState<Episode | null>(null);
+  const [scoredWeeks, setScoredWeeks] = useState<number[]>([]);
+  const { loaded: watchedLoaded, isWatched, markWatched } = useWatched();
   const [contestants, setContestants] = useState<Contestant[]>([]);
   const [picks, setPicks] = useState<Record<string, string>>({});
   const [lockedCategory, setLockedCategory] = useState<string | null>(null);
@@ -42,10 +47,12 @@ export default function PicksPage() {
     setLoadError(null);
     setError(null);
 
-    const [episodesRes, contestantsRes] = await Promise.all([
+    const [episodesRes, contestantsRes, scoredRes] = await Promise.all([
       supabase.from('episodes').select('*').eq('status', 'open').order('week_number').limit(1),
       supabase.from('contestants').select('*').order('name'),
+      supabase.from('episodes').select('week_number').eq('status', 'scored').order('week_number'),
     ]);
+    setScoredWeeks((scoredRes.data ?? []).map((e) => e.week_number));
 
     if (episodesRes.error || contestantsRes.error) {
       setLoadError("We couldn't reach the kitchen. Check your connection and try again.");
@@ -268,6 +275,31 @@ export default function PicksPage() {
     );
   }
 
+  // Spoiler guard: this week's baker list leaves out whoever went home, so hold it
+  // back until the player has watched every earlier scored week.
+  const unwatchedEarlier = scoredWeeks.filter((w) => w < episode.week_number && !isWatched(w));
+  if (watchedLoaded && playerId && unwatchedEarlier.length > 0) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-start justify-between gap-3">
+          <header>
+            <h1 className="font-display text-3xl text-ink leading-tight">Make your picks</h1>
+            <p className="text-ink-secondary mt-1 text-sm">
+              Week {episode.week_number} · {episode.theme}
+            </p>
+          </header>
+          <PlayerSelector compact />
+        </div>
+        <DeadlineNotice episode={episode} />
+        <SpoilerGate
+          weeks={unwatchedEarlier}
+          onReveal={() => unwatchedEarlier.forEach((w) => markWatched(w))}
+          message={`This week's baker list shows who's left, which gives away who went home. Watch first, then pick.`}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 pb-24 md:pb-32">
       <div className="flex items-start justify-between gap-3">
@@ -303,6 +335,9 @@ export default function PicksPage() {
               ? 'Your last saved picks are locked in. Tune in for the results.'
               : 'The deadline passed before you got your picks in this week.'}
           </p>
+          <Link href={`/episodes/${episode.week_number}`} className="btn btn-secondary mt-4">
+            See everyone&apos;s picks
+          </Link>
         </div>
       )}
 

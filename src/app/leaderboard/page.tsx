@@ -1,9 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Player, Episode, CATEGORIES, WINNER_GUESS_CATEGORY, getPlayerColor } from '@/lib/types';
 import { Crown, ChevronDown } from 'lucide-react';
+import SpoilerGate from '@/components/SpoilerGate';
+import { useWatched, visibleScores } from '@/hooks/useWatched';
 
 interface WeekScore {
   episode: Episode;
@@ -46,12 +48,11 @@ function rankPlayers(playerList: Player[], totals: Record<string, number>): Rank
 
 export default function LeaderboardPage() {
   const [players, setPlayers] = useState<Player[]>([]);
-  const [weekScores, setWeekScores] = useState<WeekScore[]>([]);
-  const [totals, setTotals] = useState<Record<string, number>>({});
-  const [allScores, setAllScores] = useState<ScoreRow[]>([]);
-  const [episodes, setEpisodes] = useState<Episode[]>([]);
+  const [rawScores, setRawScores] = useState<ScoreRow[]>([]);
+  const [scoredEpisodes, setScoredEpisodes] = useState<Episode[]>([]);
   const [expandedPlayer, setExpandedPlayer] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const { isWatched, markWatched } = useWatched();
 
   useEffect(() => {
     async function load() {
@@ -61,32 +62,35 @@ export default function LeaderboardPage() {
         supabase.from('scores').select('*'),
       ]);
 
-      const playerList = playersRes.data || [];
-      const episodeList = episodesRes.data || [];
-      const scoreList: ScoreRow[] = scoresRes.data || [];
-
-      setPlayers(playerList);
-      setEpisodes(episodeList);
-      setAllScores(scoreList);
-
-      const weeks: WeekScore[] = episodeList.map((ep) => {
-        const epScores = scoreList.filter((s) => s.episode_id === ep.id);
-        const scores: Record<string, number> = {};
-        playerList.forEach((p) => (scores[p.id] = 0));
-        epScores.forEach((s) => (scores[s.player_id] = (scores[s.player_id] || 0) + s.points));
-        return { episode: ep, scores };
-      });
-      setWeekScores(weeks);
-
-      const t: Record<string, number> = {};
-      playerList.forEach((p) => (t[p.id] = 0));
-      scoreList.forEach((s) => (t[s.player_id] = (t[s.player_id] || 0) + s.points));
-      setTotals(t);
-
+      setPlayers(playersRes.data || []);
+      setScoredEpisodes(episodesRes.data || []);
+      setRawScores(scoresRes.data || []);
       setLoading(false);
     }
     load();
   }, []);
+
+  // Spoiler guard: everything below is built only from weeks this viewer has watched.
+  const unwatched = scoredEpisodes.filter((e) => !isWatched(e.week_number));
+  const { episodes, allScores, weekScores, totals } = useMemo(() => {
+    const episodes = scoredEpisodes.filter((e) => isWatched(e.week_number));
+    const allScores = visibleScores(rawScores, scoredEpisodes, isWatched);
+
+    const weekScores: WeekScore[] = episodes.map((ep) => {
+      const scores: Record<string, number> = {};
+      players.forEach((p) => (scores[p.id] = 0));
+      allScores
+        .filter((s) => s.episode_id === ep.id)
+        .forEach((s) => (scores[s.player_id] = (scores[s.player_id] || 0) + s.points));
+      return { episode: ep, scores };
+    });
+
+    const totals: Record<string, number> = {};
+    players.forEach((p) => (totals[p.id] = 0));
+    allScores.forEach((s) => (totals[s.player_id] = (totals[s.player_id] || 0) + s.points));
+
+    return { episodes, allScores, weekScores, totals };
+  }, [players, rawScores, scoredEpisodes, isWatched]);
 
   if (loading) {
     return (
@@ -100,7 +104,8 @@ export default function LeaderboardPage() {
 
   const ranked = rankPlayers(players, totals);
   const hasScores = ranked.length > 0 && ranked[0].total > 0;
-  const leaders = ranked.length === 0 ? [] : hasScores ? ranked.filter((r) => r.rank === 1) : [ranked[0]];
+  // Before anyone has points there's no leader to crown and no ranks to show.
+  const leaders = hasScores ? ranked.filter((r) => r.rank === 1) : [];
   const rest = ranked.slice(leaders.length);
   const topTotal = ranked[0]?.total || 0;
 
@@ -155,9 +160,17 @@ export default function LeaderboardPage() {
       <header>
         <h1 className="font-display text-3xl md:text-[2.25rem] text-ink leading-tight">Standings</h1>
         <p className="text-ink-secondary mt-1 text-sm">
-          {hasScores ? `Through ${weekScores.length} ${weekScores.length === 1 ? 'episode' : 'episodes'}` : 'Waiting on the first scored episode.'}
+          {hasScores
+            ? `Through ${weekScores.length} ${weekScores.length === 1 ? 'episode' : 'episodes'}`
+            : unwatched.length > 0
+              ? 'Nothing to show until you catch up.'
+              : 'Waiting on the first scored episode.'}
         </p>
       </header>
+
+      {unwatched.length > 0 && (
+        <SpoilerGate compact weeks={[unwatched[0].week_number]} onReveal={() => markWatched(unwatched[0].week_number)} />
+      )}
 
       {/* Leader callout(s) */}
       {leaders.length > 0 && (
@@ -208,7 +221,7 @@ export default function LeaderboardPage() {
       {/* Overall standings list */}
       {rest.length > 0 && (
         <section>
-          <h2 className="eyebrow mb-3">The rest of the field</h2>
+          <h2 className="eyebrow mb-3">{hasScores ? 'The rest of the field' : 'The field'}</h2>
           <ul className="divide-y divide-border/60">
             {rest.map((entry) => {
               const color = getPlayerColor(entry.player.color);
@@ -221,7 +234,7 @@ export default function LeaderboardPage() {
                     className="w-full flex items-center gap-3 py-3 px-2 hover:bg-cream/60 rounded-md transition-colors text-left"
                   >
                     <span className="w-8 text-xs font-semibold text-ink-muted tabular-nums text-right">
-                      {entry.tied ? `T-${entry.rank}` : entry.rank}
+                      {!hasScores ? '–' : entry.tied ? `T-${entry.rank}` : entry.rank}
                     </span>
                     <span
                       className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold shrink-0"

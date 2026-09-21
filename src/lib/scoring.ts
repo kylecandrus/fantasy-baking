@@ -1,4 +1,4 @@
-import { Pick, Result, PickCategory, CATEGORIES } from './types';
+import { Pick, Result, CATEGORIES } from './types';
 
 export function calculatePickScore(
   pick: Pick,
@@ -6,6 +6,8 @@ export function calculatePickScore(
   sentHomeContestantId: string | null,
   starBakerContestantId: string | null
 ): number {
+  // No result for this category (e.g. no handshake or no elimination this week):
+  // everyone scores 0, including locked picks — a missing result is never a penalty.
   const matchingResult = results.find((r) => r.category === pick.category);
   if (!matchingResult) return 0;
 

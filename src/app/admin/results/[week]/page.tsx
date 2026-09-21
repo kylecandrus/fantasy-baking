@@ -4,10 +4,15 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
-import { Episode, Contestant, Pick, Result, CATEGORIES, WINNER_GUESS_CATEGORY } from '@/lib/types';
+import { Episode, Contestant, Pick, Result, PickCategory, CATEGORIES, WINNER_GUESS_CATEGORY } from '@/lib/types';
 import { useAdmin } from '@/hooks/usePlayer';
 import { calculatePickScore, calculateWinnerGuessScore } from '@/lib/scoring';
-import { ArrowLeft, Check, Save, Trophy, AlertCircle } from 'lucide-react';
+import { ArrowLeft, Check, Save, Trophy, AlertCircle, Crown, Ban } from 'lucide-react';
+
+// Star Baker / Technical Winner / Technical Loser always happen. A Hollywood handshake
+// is rare and some weeks nobody goes home, so those two can be left as "None this week".
+const REQUIRED_CATEGORIES: PickCategory[] = ['star_baker', 'technical_winner', 'technical_loser'];
+const OPTIONAL_CATEGORIES: PickCategory[] = ['sent_home', 'handshake'];
 
 export default function AdminResultsPage() {
   const params = useParams();
@@ -19,22 +24,25 @@ export default function AdminResultsPage() {
   const [contestants, setContestants] = useState<Contestant[]>([]);
   const [results, setResults] = useState<Record<string, string>>({});
   const [existingResults, setExistingResults] = useState(false);
+  const [isFinale, setIsFinale] = useState(false);
+  const [confirmingScore, setConfirmingScore] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
   const [scoring, setScoring] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function load() {
-      const { data: eps } = await supabase
-        .from('episodes')
-        .select('*')
-        .eq('week_number', weekNumber)
-        .limit(1);
+      const { data: eps } = await supabase.from('episodes').select('*').order('week_number');
 
-      if (!eps || eps.length === 0) { setLoading(false); return; }
-      const ep = eps[0];
+      const ep = (eps as Episode[] | null)?.find((e) => e.week_number === weekNumber);
+      if (!ep) { setLoading(false); return; }
       setEpisode(ep);
+
+      // The finale is simply the last episode of the season, whatever week that lands on.
+      const maxWeek = Math.max(...(eps as Episode[]).map((e) => e.week_number));
+      setIsFinale(ep.week_number === maxWeek && ep.week_number >= 10);
 
       const [contestantsRes, resultsRes] = await Promise.all([
         supabase.from('contestants').select('*').order('name'),
@@ -57,118 +65,179 @@ export default function AdminResultsPage() {
     (c) => c.eliminated_week === null || (episode && c.eliminated_week >= episode.week_number)
   );
 
-  const allCategories = episode?.winner_guess_points
-    ? [...CATEGORIES, { ...WINNER_GUESS_CATEGORY, points: episode.winner_guess_points }]
+  // Categories this page owns. Winner Guess is only recorded here when the admin says
+  // this is the final — on any other week the stored row (if any) is left untouched.
+  const editableCategories = isFinale
+    ? [...CATEGORIES, { ...WINNER_GUESS_CATEGORY, label: 'Season Winner', points: episode?.winner_guess_points ?? 0 }]
     : CATEGORIES;
+
+  const requiredFilled = REQUIRED_CATEGORIES.filter((key) => results[key]).length;
+  const allRequiredFilled = requiredFilled === REQUIRED_CATEGORIES.length;
+
+  function selectResult(category: PickCategory, contestantId: string | null) {
+    setSaved(false);
+    setConfirmingScore(false);
+    setResults((prev) => ({ ...prev, [category]: prev[category] === contestantId ? '' : contestantId || '' }));
+  }
 
   async function saveResults() {
     if (!episode) return;
     setSaving(true);
+    setSaved(false);
+    setConfirmingScore(false);
     setError(null);
 
-    for (const cat of allCategories) {
-      const contestantId = results[cat.key];
-      if (!contestantId) continue;
+    const filledRows = editableCategories
+      .filter((cat) => results[cat.key])
+      .map((cat) => ({ episode_id: episode.id, category: cat.key, contestant_id: results[cat.key] }));
+    const clearedKeys = editableCategories.filter((cat) => !results[cat.key]).map((cat) => cat.key);
 
-      const { error: upsertError } = await supabase.from('results').upsert(
-        { episode_id: episode.id, category: cat.key, contestant_id: contestantId },
-        { onConflict: 'episode_id,category' }
-      );
-      if (upsertError) {
-        setSaving(false);
-        setError('Failed to save results. Try again.');
-        return;
-      }
+    // Drop rows for categories the admin cleared, so corrections actually take effect.
+    if (clearedKeys.length > 0) {
+      const { error: clearError } = await supabase
+        .from('results')
+        .delete()
+        .eq('episode_id', episode.id)
+        .in('category', clearedKeys);
+      if (clearError) { setSaving(false); setError('Failed to clear results. Try again.'); return; }
     }
 
-    const sentHomeId = results['sent_home'];
+    if (filledRows.length > 0) {
+      const { error: upsertError } = await supabase
+        .from('results')
+        .upsert(filledRows, { onConflict: 'episode_id,category' });
+      if (upsertError) { setSaving(false); setError('Failed to save results. Try again.'); return; }
+    }
+
+    const sentHomeId = results['sent_home'] || null;
+
+    // Undo any elimination previously recorded for this week (the admin may have picked
+    // the wrong baker, or decided nobody went home).
+    let unelimQuery = supabase
+      .from('contestants')
+      .update({ eliminated_week: null })
+      .eq('eliminated_week', episode.week_number);
+    if (sentHomeId) unelimQuery = unelimQuery.neq('id', sentHomeId);
+    const { error: unelimError } = await unelimQuery;
+    if (unelimError) { setSaving(false); setError('Results saved but failed to un-eliminate the previous contestant.'); return; }
+
     if (sentHomeId) {
-      const { error: elimError } = await supabase.from('contestants').update({ eliminated_week: episode.week_number }).eq('id', sentHomeId);
-      if (elimError) {
-        setSaving(false);
-        setError('Results saved but failed to mark contestant as eliminated.');
-        return;
-      }
+      const { error: elimError } = await supabase
+        .from('contestants')
+        .update({ eliminated_week: episode.week_number })
+        .eq('id', sentHomeId);
+      if (elimError) { setSaving(false); setError('Results saved but failed to mark contestant as eliminated.'); return; }
     }
+
+    setContestants((prev) =>
+      prev.map((c) => {
+        if (c.id === sentHomeId) return { ...c, eliminated_week: episode.week_number };
+        if (c.eliminated_week === episode.week_number) return { ...c, eliminated_week: null };
+        return c;
+      })
+    );
 
     setSaving(false);
+    setSaved(true);
     setExistingResults(true);
   }
 
   async function scoreEpisode() {
     if (!episode) return;
     setScoring(true);
+    setConfirmingScore(false);
     setError(null);
 
-    const { data: picks } = await supabase.from('picks').select('*').eq('episode_id', episode.id);
-    const { data: resultRows } = await supabase.from('results').select('*').eq('episode_id', episode.id);
+    const [picksRes, resultsRes] = await Promise.all([
+      supabase.from('picks').select('*').eq('episode_id', episode.id),
+      supabase.from('results').select('*').eq('episode_id', episode.id),
+    ]);
 
-    if (!picks || !resultRows) { setScoring(false); setError('Failed to load picks or results.'); return; }
-
-    const typedPicks = picks as Pick[];
-    const typedResults = resultRows as Result[];
-
-    const sentHomeResult = typedResults.find((r) => r.category === 'sent_home');
-    const sentHomeContestantId = sentHomeResult?.contestant_id || null;
-    const starBakerResult = typedResults.find((r) => r.category === 'star_baker');
-    const starBakerContestantId = starBakerResult?.contestant_id || null;
-    const winnerResult = typedResults.find((r) => r.category === 'winner_guess');
-
-    const scoreInserts: { player_id: string; episode_id: string; category: string; points: number }[] = [];
-
-    for (const pick of typedPicks) {
-      // Skip winner guesses — they're scored at the end of the season, not per-episode
-      if (pick.category === 'winner_guess') continue;
-
-      const points = calculatePickScore(pick, typedResults, sentHomeContestantId, starBakerContestantId);
-      scoreInserts.push({ player_id: pick.player_id, episode_id: episode.id, category: pick.category, points });
+    if (picksRes.error || resultsRes.error || !picksRes.data || !resultsRes.data) {
+      setScoring(false);
+      setError('Failed to load picks or results.');
+      return;
     }
 
-    if (scoreInserts.length > 0) {
-      const { error: deleteError } = await supabase.from('scores').delete().eq('episode_id', episode.id);
-      if (deleteError) { setScoring(false); setError('Failed to clear old scores.'); return; }
+    const typedPicks = picksRes.data as Pick[];
+    const typedResults = resultsRes.data as Result[];
 
-      const { error: insertError } = await supabase.from('scores').insert(scoreInserts);
+    const sentHomeContestantId = typedResults.find((r) => r.category === 'sent_home')?.contestant_id || null;
+    const starBakerContestantId = typedResults.find((r) => r.category === 'star_baker')?.contestant_id || null;
+    const actualWinnerId = typedResults.find((r) => r.category === 'winner_guess')?.contestant_id || null;
+
+    if (isFinale && !actualWinnerId) {
+      setScoring(false);
+      setError('No season winner saved yet. Choose the Season Winner above and save results first.');
+      return;
+    }
+
+    const scoreRows = typedPicks
+      // Winner guesses are paid out by the finale, not by the episode they were made in.
+      .filter((pick) => pick.category !== 'winner_guess')
+      .map((pick) => ({
+        player_id: pick.player_id,
+        episode_id: episode.id,
+        category: pick.category as string,
+        points: calculatePickScore(pick, typedResults, sentHomeContestantId, starBakerContestantId),
+      }));
+
+    // Always clear this episode's own score rows (even when there are no picks), but never
+    // wipe a winner-guess payout that the finale attached to this episode.
+    const { error: deleteError } = await supabase
+      .from('scores')
+      .delete()
+      .eq('episode_id', episode.id)
+      .neq('category', 'winner_guess');
+    if (deleteError) { setScoring(false); setError('Failed to clear old scores.'); return; }
+
+    if (scoreRows.length > 0) {
+      const { error: insertError } = await supabase
+        .from('scores')
+        .upsert(scoreRows, { onConflict: 'player_id,episode_id,category' });
       if (insertError) { setScoring(false); setError('Failed to save scores.'); return; }
     }
 
-    // Week 10 (finale): automatically score all winner guesses from the season
-    if (episode.week_number === 10) {
-      const winnerResult = typedResults.find((r) => r.category === 'winner_guess');
-      const actualWinnerId = winnerResult?.contestant_id || null;
+    // Finale: pay out every winner guess made earlier in the season.
+    if (isFinale && actualWinnerId) {
+      const { data: guessEpisodes, error: guessEpisodesError } = await supabase
+        .from('episodes')
+        .select('*')
+        .not('winner_guess_points', 'is', null);
+      if (guessEpisodesError) { setScoring(false); setError('Episode scored but failed to load winner guess weeks.'); return; }
 
-      if (actualWinnerId) {
-        // Find all episodes that had winner_guess_points (weeks 1 and 5)
-        const { data: allEpisodes } = await supabase
-          .from('episodes')
+      const guessEps = (guessEpisodes as Episode[] | null) ?? [];
+      if (guessEps.length > 0) {
+        const guessEpisodeIds = guessEps.map((e) => e.id);
+        const pointsByEpisode = new Map(guessEps.map((e) => [e.id, e.winner_guess_points ?? 0]));
+
+        const { data: guessPicks, error: guessPicksError } = await supabase
+          .from('picks')
           .select('*')
-          .not('winner_guess_points', 'is', null);
+          .in('episode_id', guessEpisodeIds)
+          .eq('category', 'winner_guess');
+        if (guessPicksError) { setScoring(false); setError('Episode scored but failed to load winner guesses.'); return; }
 
-        if (allEpisodes) {
-          const winnerScoreInserts: typeof scoreInserts = [];
+        // Replace the payout rows wholesale so re-running the finale is idempotent.
+        const { error: clearWinnerError } = await supabase
+          .from('scores')
+          .delete()
+          .in('episode_id', guessEpisodeIds)
+          .eq('category', 'winner_guess');
+        if (clearWinnerError) { setScoring(false); setError('Episode scored but failed to clear old winner guess scores.'); return; }
 
-          for (const ep of allEpisodes) {
-            const { data: epPicks } = await supabase
-              .from('picks')
-              .select('*')
-              .eq('episode_id', ep.id)
-              .eq('category', 'winner_guess');
+        const winnerScoreRows = ((guessPicks as Pick[] | null) ?? []).map((pick) => ({
+          player_id: pick.player_id,
+          episode_id: pick.episode_id,
+          category: 'winner_guess',
+          points: calculateWinnerGuessScore(pick, actualWinnerId, pointsByEpisode.get(pick.episode_id) ?? 0),
+        }));
 
-            if (epPicks) {
-              // Clear any existing winner guess scores for this episode
-              await supabase.from('scores').delete().eq('episode_id', ep.id).eq('category', 'winner_guess');
-
-              for (const pick of epPicks) {
-                const points = calculateWinnerGuessScore(pick as Pick, actualWinnerId, ep.winner_guess_points || 0);
-                winnerScoreInserts.push({ player_id: pick.player_id, episode_id: ep.id, category: 'winner_guess', points });
-              }
-            }
-          }
-
-          if (winnerScoreInserts.length > 0) {
-            const { error: winnerInsertError } = await supabase.from('scores').insert(winnerScoreInserts);
-            if (winnerInsertError) { setScoring(false); setError('Episode scored but failed to score winner guesses.'); return; }
-          }
+        if (winnerScoreRows.length > 0) {
+          const { error: winnerInsertError } = await supabase
+            .from('scores')
+            .upsert(winnerScoreRows, { onConflict: 'player_id,episode_id,category' });
+          if (winnerInsertError) { setScoring(false); setError('Episode scored but failed to score winner guesses.'); return; }
         }
       }
     }
@@ -201,9 +270,6 @@ export default function AdminResultsPage() {
     );
   }
 
-  const filledCount = Object.keys(results).filter((k) => results[k]).length;
-  const requiredCount = CATEGORIES.length;
-
   return (
     <div className="space-y-5">
       <div>
@@ -221,34 +287,91 @@ export default function AdminResultsPage() {
         </div>
       )}
 
+      <div className="card p-4">
+        <button
+          onClick={() => { setIsFinale(!isFinale); setConfirmingScore(false); }}
+          aria-pressed={isFinale}
+          className="flex items-start gap-3 w-full text-left cursor-pointer"
+        >
+          <span
+            className={`mt-0.5 w-5 h-5 shrink-0 rounded-md border flex items-center justify-center transition-all ${
+              isFinale ? 'bg-amber-btn border-amber-btn text-white' : 'bg-surface border-border text-transparent'
+            }`}
+          >
+            <Check size={13} strokeWidth={3} />
+          </span>
+          <span>
+            <span className="flex items-center gap-1.5 font-semibold text-ink">
+              <Crown size={14} className="text-amber-dark" />
+              This is the final — record the season winner
+            </span>
+            <span className="block text-xs text-ink-muted mt-0.5">
+              Scoring this episode will also pay out every winner guess made earlier in the season.
+            </span>
+          </span>
+        </button>
+      </div>
+
       <div className="space-y-4 stagger">
-        {allCategories.map((cat) => (
-          <div key={cat.key} className="card p-4">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="font-semibold text-ink">{cat.label}</h3>
-              <span className="text-xs font-medium text-ink-muted bg-cream-dark px-2 py-0.5 rounded-md">{cat.points} pts</span>
-            </div>
-            <div className="grid grid-cols-3 sm:grid-cols-4 gap-1.5">
-              {(cat.key === 'winner_guess' ? contestants : activeContestants).map((c) => {
-                const selected = results[cat.key] === c.id;
-                return (
+        {editableCategories.map((cat) => {
+          const optional = OPTIONAL_CATEGORIES.includes(cat.key);
+          const isWinner = cat.key === 'winner_guess';
+          const pool = isWinner ? contestants : activeContestants;
+          const none = !results[cat.key];
+          return (
+            <div key={cat.key} className="card p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="flex items-center gap-1.5 font-semibold text-ink">
+                  {isWinner && <Crown size={14} className="text-amber-dark" />}
+                  {cat.label}
+                </h3>
+                <div className="flex items-center gap-1.5">
+                  {optional && (
+                    <span className="text-xs font-medium text-ink-muted bg-cream-dark px-2 py-0.5 rounded-md">Optional</span>
+                  )}
+                  {isWinner ? (
+                    <span className="text-xs font-medium text-amber-dark bg-amber-subtle px-2 py-0.5 rounded-md">Season payout</span>
+                  ) : (
+                    <span className="text-xs font-medium text-ink-muted bg-cream-dark px-2 py-0.5 rounded-md">{cat.points} pts</span>
+                  )}
+                </div>
+              </div>
+              <div className="grid grid-cols-3 sm:grid-cols-4 gap-1.5">
+                {optional && (
                   <button
-                    key={c.id}
-                    onClick={() => setResults((prev) => ({ ...prev, [cat.key]: c.id }))}
+                    onClick={() => selectResult(cat.key, null)}
                     className={`relative p-2.5 rounded-xl text-sm font-medium text-center transition-all border cursor-pointer ${
-                      selected
-                        ? 'bg-amber-subtle border-amber text-amber-dark ring-1 ring-amber/20'
-                        : 'bg-surface border-border text-ink-secondary hover:border-ink-faint'
+                      none
+                        ? 'bg-cream-dark border-ink-faint text-ink-secondary ring-1 ring-ink-faint/20'
+                        : 'bg-surface border-border border-dashed text-ink-muted hover:border-ink-faint'
                     }`}
                   >
-                    {selected && <Check size={12} className="absolute top-1.5 right-1.5 text-amber" />}
-                    {c.name}
+                    {none && <Check size={12} className="absolute top-1.5 right-1.5 text-ink-muted" />}
+                    <Ban size={12} className="inline-block mr-1 -mt-0.5" />
+                    None this week
                   </button>
-                );
-              })}
+                )}
+                {pool.map((c) => {
+                  const selected = results[cat.key] === c.id;
+                  return (
+                    <button
+                      key={c.id}
+                      onClick={() => selectResult(cat.key, c.id)}
+                      className={`relative p-2.5 rounded-xl text-sm font-medium text-center transition-all border cursor-pointer ${
+                        selected
+                          ? 'bg-amber-subtle border-amber text-amber-dark ring-1 ring-amber/20'
+                          : 'bg-surface border-border text-ink-secondary hover:border-ink-faint'
+                      }`}
+                    >
+                      {selected && <Check size={12} className="absolute top-1.5 right-1.5 text-amber" />}
+                      {c.name}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       <div className="space-y-2 sticky bottom-20 md:bottom-4 z-40 pt-2">
@@ -260,22 +383,50 @@ export default function AdminResultsPage() {
         )}
         <button
           onClick={saveResults}
-          disabled={saving || filledCount < requiredCount}
-          className="btn btn-primary btn-lg w-full shadow-lg"
+          disabled={saving || !allRequiredFilled}
+          className={`btn btn-lg w-full shadow-lg ${saved ? 'btn-success' : 'btn-primary'}`}
         >
-          <Save size={18} />
-          {saving ? 'Saving...' : existingResults ? 'Update Results' : `Save Results (${filledCount}/${requiredCount})`}
+          {saved ? <Check size={18} /> : <Save size={18} />}
+          {saving
+            ? 'Saving...'
+            : saved
+              ? 'Results saved'
+              : allRequiredFilled
+                ? existingResults ? 'Update Results' : 'Save Results'
+                : `Save Results (${requiredFilled}/${REQUIRED_CATEGORIES.length} required)`}
         </button>
 
-        {existingResults && (
+        {existingResults && !confirmingScore && (
           <button
-            onClick={scoreEpisode}
+            onClick={() => { setError(null); setConfirmingScore(true); }}
             disabled={scoring}
             className="btn btn-success btn-lg w-full shadow-lg"
           >
             <Trophy size={18} />
             {scoring ? 'Scoring...' : 'Score Episode & Lock'}
           </button>
+        )}
+
+        {existingResults && confirmingScore && (
+          <div className="card p-4 space-y-3 shadow-lg animate-fade-up">
+            <div className="flex items-start gap-2 text-sm text-ink">
+              <AlertCircle size={16} className="shrink-0 mt-0.5 text-amber-dark" />
+              <span>
+                This rewrites everyone&apos;s scores for week {episode.week_number} and locks the episode — the family
+                sees it straight away.
+                {isFinale && ' It also pays out all winner guesses from earlier weeks.'}
+              </span>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={scoreEpisode} disabled={scoring} className="btn btn-success btn-sm flex-1">
+                <Trophy size={15} />
+                {scoring ? 'Scoring...' : 'Yes, score it'}
+              </button>
+              <button onClick={() => setConfirmingScore(false)} disabled={scoring} className="btn btn-secondary btn-sm flex-1">
+                Cancel
+              </button>
+            </div>
+          </div>
         )}
       </div>
     </div>

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Player, PLAYER_COLORS, getPlayerColor } from '@/lib/types';
 import { usePlayer } from '@/hooks/usePlayer';
@@ -9,31 +9,39 @@ import { User, ChevronDown, Palette } from 'lucide-react';
 export default function PlayerSelector({ compact = false }: { compact?: boolean }) {
   const { playerId, setPlayerId, loaded } = usePlayer();
   const [players, setPlayers] = useState<Player[]>([]);
-  const [selectedPlayer, setSelectedPlayer] = useState<Player | null>(null);
+  const [playersLoading, setPlayersLoading] = useState(true);
+  const [playersError, setPlayersError] = useState(false);
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [pinPromptPlayer, setPinPromptPlayer] = useState<Player | null>(null);
   const [pinInput, setPinInput] = useState('');
   const [pinError, setPinError] = useState(false);
 
-  useEffect(() => {
-    supabase.from('players').select('*').order('name').then(({ data }) => {
-      if (data) setPlayers(data);
+  // selectedPlayer is fully derived from playerId + players, so there's no
+  // separate state to keep in sync — it just recomputes on every render.
+  const selectedPlayer = playerId ? players.find((p) => p.id === playerId) || null : null;
+
+  const fetchPlayers = useCallback(() => {
+    setPlayersLoading(true);
+    setPlayersError(false);
+    supabase.from('players').select('*').order('name').then(({ data, error }) => {
+      if (error) {
+        setPlayersError(true);
+      } else {
+        setPlayers(data || []);
+      }
+      setPlayersLoading(false);
     });
   }, []);
 
   useEffect(() => {
-    if (playerId && players.length > 0) {
-      setSelectedPlayer(players.find((p) => p.id === playerId) || null);
-    } else {
-      setSelectedPlayer(null);
-    }
-  }, [playerId, players]);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- initial load-on-mount fetch
+    fetchPlayers();
+  }, [fetchPlayers]);
 
   async function changeColor(colorKey: string) {
     if (!selectedPlayer) return;
     await supabase.from('players').update({ color: colorKey }).eq('id', selectedPlayer.id);
     const updated = { ...selectedPlayer, color: colorKey as Player['color'] };
-    setSelectedPlayer(updated);
     setPlayers((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
     setShowColorPicker(false);
   }
@@ -172,29 +180,47 @@ export default function PlayerSelector({ compact = false }: { compact?: boolean 
       </div>
       <h2 className="font-display text-xl text-ink mb-1">Who&apos;s playing?</h2>
       <p className="text-sm text-ink-muted mb-5">Select your name to get started</p>
-      <div className="grid grid-cols-2 gap-2.5">
-        {players.map((player) => {
-          const color = getPlayerColor(player.color);
-          return (
-            <button
-              key={player.id}
-              onClick={() => handlePlayerClick(player)}
-              className="card card-interactive p-4 flex items-center gap-3"
-            >
-              <span className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold shrink-0" style={{ background: color.bg, color: color.text }}>
-                {player.name[0]}
-              </span>
-              <span className="font-semibold text-ink text-left">{player.name}</span>
-            </button>
-          );
-        })}
-      </div>
+      {playersLoading ? (
+        <div className="grid grid-cols-2 gap-2.5">
+          {[...Array(4)].map((_, i) => <div key={i} className="skeleton h-[68px] w-full rounded-2xl" />)}
+        </div>
+      ) : playersError ? (
+        <div className="py-2">
+          <p className="text-sm text-red-700 mb-3">Couldn&apos;t reach the server</p>
+          <button onClick={fetchPlayers} className="btn btn-secondary btn-sm">Retry</button>
+        </div>
+      ) : players.length === 0 ? (
+        <p className="text-sm text-ink-muted py-2">
+          No players yet — ask the commissioner to add you in Admin.
+        </p>
+      ) : (
+        <div className="grid grid-cols-2 gap-2.5">
+          {players.map((player) => {
+            const color = getPlayerColor(player.color);
+            return (
+              <button
+                key={player.id}
+                onClick={() => handlePlayerClick(player)}
+                className="card card-interactive p-4 flex items-center gap-3"
+              >
+                <span className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold shrink-0" style={{ background: color.bg, color: color.text }}>
+                  {player.name[0]}
+                </span>
+                <span className="font-semibold text-ink text-left">{player.name}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {pinPromptPlayer && (
         <div className="mt-4 p-4 rounded-xl border border-border bg-surface animate-fade-up">
-          <p className="text-sm font-medium text-ink mb-2">Enter PIN for {pinPromptPlayer.name}</p>
+          <label htmlFor="player-selector-pin-input" className="text-sm font-medium text-ink mb-2 block">
+            Enter PIN for {pinPromptPlayer.name}
+          </label>
           <div className="flex gap-2">
             <input
+              id="player-selector-pin-input"
               type="password"
               inputMode="numeric"
               maxLength={4}

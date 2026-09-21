@@ -1,36 +1,37 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Fantasy Bake Off
 
-## Getting Started
+A family fantasy league for The Great British Bake Off / Baking Show. Next.js (app router) + Supabase + Tailwind.
 
-First, run the development server:
+## Run locally
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Create `.env.local` with your Supabase project's values (Project Settings → API):
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```
+NEXT_PUBLIC_SUPABASE_URL=https://<project>.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon key>
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Without them the app runs against a stub and every page shows its empty state.
 
-## Learn More
+## Database
 
-To learn more about Next.js, take a look at the following resources:
+- `supabase/schema.sql` — full schema for a brand-new Supabase project.
+- `supabase/migrations/` — run-once scripts for an existing project, pasted into the Supabase SQL Editor.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Starting a new season
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+1. Copy the latest file in `supabase/migrations/` and update the archive table prefix, the baker names, and episode 1.
+2. Run it in the Supabase SQL Editor. It archives last season into the private `archive` schema, clears episodes/picks/results/scores/contestants (players are kept), and seeds the new cast.
+3. In **Admin → Contestants**, upload baker photos.
+4. In **Admin → Episodes**, set when picks close for episode 1.
 
-## Deploy on Vercel
+## Each week
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+1. **Admin → Episodes**: add the episode with a "picks close" time and open it. Picks lock automatically at that time (enforced in the database too).
+2. After it airs, **Admin → Results**: enter results (Handshake and Sent Home can be "none this week"), then Score.
+3. On the final, tick "This is the final" and record the season winner so winner-guess points pay out.

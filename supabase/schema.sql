@@ -7,6 +7,7 @@ CREATE TABLE players (
   name text UNIQUE NOT NULL,
   is_admin boolean DEFAULT false,
   color text DEFAULT 'amber',
+  pin text,
   created_at timestamptz DEFAULT now()
 );
 
@@ -22,10 +23,11 @@ CREATE TABLE contestants (
 -- Episodes (each week of the season)
 CREATE TABLE episodes (
   id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
-  week_number int NOT NULL,
+  week_number int UNIQUE NOT NULL,
   theme text NOT NULL,
   status text DEFAULT 'upcoming' CHECK (status IN ('upcoming', 'open', 'locked', 'scored')),
   winner_guess_points int,
+  lock_at timestamptz, -- picks close at this time (null = manual lock only)
   created_at timestamptz DEFAULT now()
 );
 
@@ -36,6 +38,7 @@ CREATE TABLE picks (
   episode_id uuid REFERENCES episodes(id) ON DELETE CASCADE,
   category text NOT NULL CHECK (category IN ('star_baker', 'technical_winner', 'technical_loser', 'sent_home', 'handshake', 'winner_guess')),
   contestant_id uuid REFERENCES contestants(id) ON DELETE CASCADE,
+  locked boolean NOT NULL DEFAULT false, -- the one double-points pick per week
   created_at timestamptz DEFAULT now(),
   UNIQUE(player_id, episode_id, category)
 );
@@ -76,6 +79,23 @@ CREATE POLICY "Allow all access" ON episodes FOR ALL USING (true) WITH CHECK (tr
 CREATE POLICY "Allow all access" ON picks FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all access" ON results FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all access" ON scores FOR ALL USING (true) WITH CHECK (true);
+
+-- Reject new or changed picks once an episode is locked or its deadline has passed
+CREATE OR REPLACE FUNCTION enforce_picks_open() RETURNS trigger AS $$
+DECLARE
+  ep episodes%ROWTYPE;
+BEGIN
+  SELECT * INTO ep FROM episodes WHERE id = NEW.episode_id;
+  IF FOUND AND (ep.status <> 'open' OR (ep.lock_at IS NOT NULL AND now() >= ep.lock_at)) THEN
+    RAISE EXCEPTION 'Picks are closed for this episode';
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER picks_open_check
+  BEFORE INSERT OR UPDATE ON picks
+  FOR EACH ROW EXECUTE FUNCTION enforce_picks_open();
 
 -- Seed data: Players
 INSERT INTO players (name, is_admin) VALUES

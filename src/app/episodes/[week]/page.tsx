@@ -5,10 +5,14 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { Episode, Pick, Result, Player, Contestant, CATEGORIES, WINNER_GUESS_CATEGORY, getPlayerColor } from '@/lib/types';
-import { ArrowLeft, Target, Check, X, Minus, Clock, Lock } from 'lucide-react';
+import { isPicksOpen } from '@/lib/deadline';
+import { useNow } from '@/lib/useNow';
+import DeadlineNotice from '@/components/DeadlineNotice';
+import { ArrowLeft, Target, Check, X, Clock, Lock } from 'lucide-react';
 
 export default function EpisodeDetailPage() {
   const params = useParams();
+  const now = useNow();
   const weekNumber = Number(params.week);
   const [episode, setEpisode] = useState<Episode | null>(null);
   const [picks, setPicks] = useState<Pick[]>([]);
@@ -230,10 +234,19 @@ export default function EpisodeDetailPage() {
       )}
 
       {episode.status === 'open' && (
-        <Link href="/picks" className="btn btn-primary btn-lg w-full">
-          <Target size={18} />
-          Make Your Picks
-        </Link>
+        <div className="space-y-3">
+          <DeadlineNotice episode={episode} />
+          {isPicksOpen(episode, now) ? (
+            <Link href="/picks" className="btn btn-primary btn-lg w-full">
+              <Target size={18} />
+              Make Your Picks
+            </Link>
+          ) : (
+            <div className="card p-5 text-center">
+              <p className="text-ink-muted text-sm">Picks are closed. Results will be entered after the episode.</p>
+            </div>
+          )}
+        </div>
       )}
     </div>
   );

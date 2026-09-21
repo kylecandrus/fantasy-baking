@@ -9,6 +9,7 @@ import { isPicksOpen } from '@/lib/deadline';
 import { useNow } from '@/lib/useNow';
 import DeadlineNotice from '@/components/DeadlineNotice';
 import { ArrowLeft, Target, Check, X, Clock, Lock } from 'lucide-react';
+import EveryonePicks from '@/components/EveryonePicks';
 
 export default function EpisodeDetailPage() {
   const params = useParams();
@@ -108,6 +109,10 @@ export default function EpisodeDetailPage() {
   }
 
   const scored = episode.status === 'scored';
+  // Picks stay hidden from each other until nobody can change theirs.
+  const picksClosed = episode.status === 'locked' || scored || (episode.status === 'open' && !isPicksOpen(episode, now));
+  const hasResults = scored || results.length > 0;
+  const submittedIds = new Set(picks.map((p) => p.player_id));
   const allCategories = episode?.winner_guess_points
     ? [...CATEGORIES, { ...WINNER_GUESS_CATEGORY, points: episode.winner_guess_points }]
     : CATEGORIES;
@@ -134,8 +139,12 @@ export default function EpisodeDetailPage() {
         </div>
       )}
 
+      {picksClosed && !hasResults && picks.length > 0 && (
+        <EveryonePicks categories={allCategories} players={players} contestants={contestants} picks={picks} />
+      )}
+
       {/* Results + Picks Grid */}
-      {(scored || results.length > 0) && (
+      {hasResults && (
         <div className="card overflow-hidden animate-fade-up">
           <div className="overflow-x-auto">
             <table className="w-full text-sm min-w-[480px]">
@@ -221,10 +230,8 @@ export default function EpisodeDetailPage() {
         </div>
       )}
 
-      {!scored && episode.status === 'locked' && picks.length > 0 && (
-        <div className="card p-5 text-center">
-          <p className="text-ink-muted text-sm">Picks are locked. Results will be entered after the episode.</p>
-        </div>
+      {!hasResults && episode.status === 'locked' && picks.length > 0 && (
+        <p className="text-ink-muted text-sm text-center">Results will be entered after the episode.</p>
       )}
 
       {!scored && episode.status === 'locked' && picks.length === 0 && (
@@ -237,10 +244,37 @@ export default function EpisodeDetailPage() {
         <div className="space-y-3">
           <DeadlineNotice episode={episode} />
           {isPicksOpen(episode, now) ? (
-            <Link href="/picks" className="btn btn-primary btn-lg w-full">
-              <Target size={18} />
-              Make Your Picks
-            </Link>
+            <>
+              <Link href="/picks" className="btn btn-primary btn-lg w-full">
+                <Target size={18} />
+                Make Your Picks
+              </Link>
+              {players.length > 0 && (
+                <div className="card p-4">
+                  <h3 className="font-semibold text-ink text-sm">
+                    Picks in: {submittedIds.size} of {players.length}
+                  </h3>
+                  <div className="flex flex-wrap gap-1.5 mt-2.5">
+                    {players.map((p) => {
+                      const isIn = submittedIds.has(p.id);
+                      return (
+                        <span
+                          key={p.id}
+                          className={`inline-flex items-center gap-1.5 pl-1.5 pr-2 py-0.5 rounded-full text-xs font-medium ${
+                            isIn ? 'bg-sage-subtle text-ink' : 'bg-cream text-ink-muted'
+                          }`}
+                        >
+                          <span className="w-2 h-2 rounded-full shrink-0" style={{ background: getPlayerColor(p.color).bg, opacity: isIn ? 1 : 0.35 }} />
+                          {p.name}
+                          {isIn ? <Check size={11} className="text-sage" aria-label="picks in" /> : <span className="sr-only">not yet</span>}
+                        </span>
+                      );
+                    })}
+                  </div>
+                  <p className="text-xs text-ink-muted mt-2.5">Everyone&apos;s picks are revealed here once picks close.</p>
+                </div>
+              )}
+            </>
           ) : (
             <div className="card p-5 text-center">
               <p className="text-ink-muted text-sm">Picks are closed. Results will be entered after the episode.</p>

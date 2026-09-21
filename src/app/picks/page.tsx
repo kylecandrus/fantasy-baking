@@ -14,6 +14,7 @@ import { useNow } from '@/lib/useNow';
 import { usePlayer } from '@/hooks/usePlayer';
 import PlayerSelector from '@/components/PlayerSelector';
 import DeadlineNotice from '@/components/DeadlineNotice';
+import Link from 'next/link';
 import { Target, Check, AlertCircle, Lock, RefreshCw } from 'lucide-react';
 import ContestantAvatar from '@/components/ContestantAvatar';
 
@@ -303,6 +304,9 @@ export default function PicksPage() {
               ? 'Your last saved picks are locked in. Tune in for the results.'
               : 'The deadline passed before you got your picks in this week.'}
           </p>
+          <Link href={`/episodes/${episode.week_number}`} className="btn btn-secondary mt-4">
+            See everyone&apos;s picks
+          </Link>
         </div>
       )}
 

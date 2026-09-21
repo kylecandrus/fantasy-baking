@@ -178,7 +178,7 @@ export default function Home() {
               href={`/episodes/${currentEpisode.week_number}`}
               className="btn btn-secondary w-full mt-6 relative z-10"
             >
-              See your picks
+              See everyone&apos;s picks
               <ArrowRight size={16} className="ml-auto opacity-60" />
             </Link>
           )}

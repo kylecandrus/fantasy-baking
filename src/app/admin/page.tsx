@@ -23,7 +23,9 @@ export default function AdminPage() {
           <p className="text-ink-muted text-sm mt-1">Enter the commissioner PIN</p>
         </div>
         <div className="card p-6">
+          <label htmlFor="admin-pin-input" className="sr-only">Commissioner PIN</label>
           <input
+            id="admin-pin-input"
             type="password"
             inputMode="numeric"
             maxLength={8}

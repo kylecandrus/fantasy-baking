@@ -9,6 +9,12 @@
   --color-amber-light: #E8C876;
   --color-amber-dark: #A67623;
   --color-amber-subtle: #FBF5EB;
+  /* Darker-still amber reserved for button backgrounds — white text on
+     --color-amber is only 2.81:1 (fails WCAG AA 4.5:1). --color-amber
+     itself stays untouched since it's used decoratively (accents, dots,
+     borders) elsewhere. */
+  --color-amber-btn: #96701F;
+  --color-amber-btn-hover: #7C5C1A;
   --color-terracotta: #C4756E;
   --color-terracotta-light: #E8ACA7;
   --color-terracotta-subtle: #FDF2F1;
@@ -16,10 +22,18 @@
   --color-sage-light: #8FBF8E;
   --color-sage-dark: #4A7A49;
   --color-sage-subtle: #EFF6EF;
+  /* Hover shade for button backgrounds, darker than --color-sage-dark
+     (which is now the button's default background — see .btn-success). */
+  --color-sage-btn-hover: #3D6640;
   --color-ink: #2D1B0E;
   --color-ink-secondary: #6B5B4D;
-  --color-ink-muted: #A89888;
-  --color-ink-faint: #C8BDAF;
+  /* Darkened from #A89888 (2.62:1 on cream) to meet WCAG AA 4.5:1 for
+     running muted text. */
+  --color-ink-muted: #7C7064;
+  /* Darkened from #C8BDAF (~1.8:1 on cream). Kept lighter than
+     --color-ink-muted for decorative/de-emphasized use; reaches ~3.1:1,
+     meeting the AA large-text/UI-component threshold. */
+  --color-ink-faint: #948B81;
   --color-border: #EDE8E1;
   --color-border-strong: #D9D0C5;
   --font-sans: 'DM Sans', system-ui, -apple-system, sans-serif;
@@ -137,11 +151,11 @@ h1, h2, h3 {
 }
 
 .btn-primary {
-  background: var(--color-amber);
+  background: var(--color-amber-btn);
   color: white;
 }
 .btn-primary:hover:not(:disabled) {
-  background: var(--color-amber-dark);
+  background: var(--color-amber-btn-hover);
 }
 
 .btn-secondary {
@@ -165,11 +179,11 @@ h1, h2, h3 {
 }
 
 .btn-success {
-  background: var(--color-sage);
+  background: var(--color-sage-dark);
   color: white;
 }
 .btn-success:hover:not(:disabled) {
-  background: var(--color-sage-dark);
+  background: var(--color-sage-btn-hover);
 }
 
 .btn-sm {

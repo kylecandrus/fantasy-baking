@@ -49,6 +49,12 @@ export interface Episode {
   theme: string;
   status: EpisodeStatus;
   winner_guess_points: number | null;
+  /**
+   * When picks close, as an ISO timestamp (`timestamptz`). Null means "no deadline —
+   * the commissioner locks by hand". Reads from a database that predates the season-17
+   * migration omit the column entirely, so helpers treat undefined as null.
+   */
+  lock_at: string | null;
   created_at: string;
 }
 

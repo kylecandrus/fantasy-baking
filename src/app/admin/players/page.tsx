@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { Player, PLAYER_COLORS, getPlayerColor } from '@/lib/types';
 import { useAdmin } from '@/hooks/usePlayer';
-import { ArrowLeft, Plus, Trash2 } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, AlertCircle, X } from 'lucide-react';
 
 export default function AdminPlayersPage() {
   const { isAdmin, loaded } = useAdmin();
@@ -13,32 +13,53 @@ export default function AdminPlayersPage() {
   const [newName, setNewName] = useState('');
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   async function loadPlayers() {
-    const { data } = await supabase.from('players').select('*').order('name');
+    const { data, error: loadError } = await supabase.from('players').select('*').order('name');
+    if (loadError) setError(`Couldn't load players: ${loadError.message}`);
     if (data) setPlayers(data);
     setLoading(false);
   }
 
-  useEffect(() => { loadPlayers(); }, []);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- initial load-on-mount fetch
+    loadPlayers();
+  }, []);
 
   async function addPlayer() {
     if (!newName.trim()) return;
     setAdding(true);
-    await supabase.from('players').insert({ name: newName.trim(), color: 'amber' });
+    setError(null);
+    const { error: insertError } = await supabase.from('players').insert({ name: newName.trim(), color: 'amber' });
+    if (insertError) {
+      setError(`Couldn't add player: ${insertError.message}`);
+      setAdding(false);
+      return;
+    }
     setNewName('');
     setAdding(false);
     await loadPlayers();
   }
 
   async function changeColor(player: Player, colorKey: string) {
-    await supabase.from('players').update({ color: colorKey }).eq('id', player.id);
+    setError(null);
+    const { error: updateError } = await supabase.from('players').update({ color: colorKey }).eq('id', player.id);
+    if (updateError) {
+      setError(`Couldn't update ${player.name}: ${updateError.message}`);
+      return;
+    }
     await loadPlayers();
   }
 
   async function deletePlayer(player: Player) {
     if (!confirm(`Delete ${player.name}? This will also delete all their picks and scores.`)) return;
-    await supabase.from('players').delete().eq('id', player.id);
+    setError(null);
+    const { error: deleteError } = await supabase.from('players').delete().eq('id', player.id);
+    if (deleteError) {
+      setError(`Couldn't delete ${player.name}: ${deleteError.message}`);
+      return;
+    }
     await loadPlayers();
   }
 
@@ -62,11 +83,25 @@ export default function AdminPlayersPage() {
         <h1 className="font-display text-2xl text-ink">Players</h1>
       </div>
 
+      {error && (
+        <div role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 flex items-start justify-between gap-3">
+          <div className="flex items-start gap-2">
+            <AlertCircle size={16} className="text-red-700 shrink-0 mt-0.5" />
+            <p className="text-sm text-red-700">{error}</p>
+          </div>
+          <button onClick={() => setError(null)} aria-label="Dismiss error" className="text-red-700 hover:text-red-900 shrink-0">
+            <X size={14} />
+          </button>
+        </div>
+      )}
+
       {/* Add player */}
       <div className="card p-4 space-y-3">
         <h3 className="font-semibold text-ink text-sm">Add Player</h3>
         <div className="flex gap-2">
+          <label htmlFor="new-player-name" className="sr-only">Player name</label>
           <input
+            id="new-player-name"
             type="text"
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
@@ -103,7 +138,11 @@ export default function AdminPlayersPage() {
                         <span className="font-semibold text-ink">{p.name}</span>
                       </div>
                     </div>
-                    <button onClick={() => deletePlayer(p)} className="p-1.5 rounded-lg text-ink-faint hover:text-terracotta hover:bg-terracotta-subtle transition-colors">
+                    <button
+                      onClick={() => deletePlayer(p)}
+                      aria-label={`Delete ${p.name}`}
+                      className="p-1.5 rounded-lg text-ink-faint hover:text-terracotta hover:bg-terracotta-subtle transition-colors"
+                    >
                       <Trash2 size={14} />
                     </button>
                   </div>
@@ -112,6 +151,7 @@ export default function AdminPlayersPage() {
                       <button
                         key={c.key}
                         onClick={() => changeColor(p, c.key)}
+                        aria-label={`Set ${p.name}'s color to ${c.label}`}
                         className={`w-6 h-6 rounded-full transition-all ${p.color === c.key ? 'ring-2 ring-offset-1 ring-ink-muted scale-110' : 'hover:scale-105 opacity-60 hover:opacity-100'}`}
                         style={{ background: c.bg }}
                         title={c.label}

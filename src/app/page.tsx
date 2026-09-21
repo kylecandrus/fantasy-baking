@@ -1,107 +1,133 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { Episode, Player, CATEGORIES } from '@/lib/types';
+import { isDeadlinePassed } from '@/lib/deadline';
+import { useNow } from '@/lib/useNow';
 import { usePlayer } from '@/hooks/usePlayer';
 import Leaderboard from '@/components/Leaderboard';
 import EpisodeCard from '@/components/EpisodeCard';
-import Onboarding from '@/components/Onboarding';
-import { Target, Tv, ArrowRight, ChevronDown } from 'lucide-react';
+import DeadlineNotice from '@/components/DeadlineNotice';
+import { Target, Tv, ArrowRight, ChevronDown, AlertCircle, RefreshCw } from 'lucide-react';
 
 interface Subhead {
   text: string;
   tone?: 'default' | 'live';
 }
 
+const DEFAULT_SUBHEAD: Subhead = { text: 'A family game for The Great British Baking Show' };
+
 export default function Home() {
   const { playerId } = usePlayer();
+  const now = useNow();
   const [currentEpisode, setCurrentEpisode] = useState<Episode | null>(null);
-  const [subhead, setSubhead] = useState<Subhead>({ text: 'A family game for The Great British Baking Show' });
+  const [subhead, setSubhead] = useState<Subhead>(DEFAULT_SUBHEAD);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setLoadError(false);
+    setSubhead(DEFAULT_SUBHEAD);
+
+    const { data: episodes, error: episodesError } = await supabase
+      .from('episodes')
+      .select('*')
+      .order('week_number', { ascending: true });
+
+    if (episodesError) {
+      setCurrentEpisode(null);
+      setLoadError(true);
+      setLoading(false);
+      return;
+    }
+
+    const open = episodes?.find((e) => e.status === 'open') || null;
+    const locked = episodes?.find((e) => e.status === 'locked') || null;
+    const upcoming = episodes?.find((e) => e.status === 'upcoming') || null;
+    const fallback = episodes && episodes.length > 0 ? episodes[episodes.length - 1] : null;
+    const featured = open || locked || upcoming || fallback;
+    setCurrentEpisode(featured);
+
+    // Build a stateful subhead.
+    if (featured?.status === 'open' && playerId) {
+      const totalCats = (featured.winner_guess_points ? 1 : 0) + CATEGORIES.length;
+      const { data: picks } = await supabase
+        .from('picks')
+        .select('id')
+        .eq('player_id', playerId)
+        .eq('episode_id', featured.id);
+      const filled = picks?.length || 0;
+      setSubhead({
+        tone: 'live',
+        text: filled === 0
+          ? `Picks are open for week ${featured.week_number} — make yours.`
+          : filled < totalCats
+            ? `You've made ${filled} of ${totalCats} picks for week ${featured.week_number}.`
+            : `All ${totalCats} picks in for week ${featured.week_number}. Update anytime before lock.`,
+      });
+    } else if (featured?.status === 'open') {
+      setSubhead({ tone: 'live', text: `Picks are open for week ${featured.week_number}.` });
+    } else if (featured?.status === 'locked') {
+      setSubhead({ text: `Week ${featured.week_number} is locked. Tune in for the results.` });
+    } else if (featured?.status === 'scored') {
+      // Show top of leaderboard if available.
+      const [{ data: players }, { data: scores }] = await Promise.all([
+        supabase.from('players').select('*'),
+        supabase.from('scores').select('*'),
+      ]);
+      if (players && players.length > 0) {
+        const totals: Record<string, number> = {};
+        players.forEach((p: Player) => (totals[p.id] = 0));
+        scores?.forEach((s) => (totals[s.player_id] = (totals[s.player_id] || 0) + s.points));
+        const sorted = [...players].sort((a, b) => (totals[b.id] || 0) - (totals[a.id] || 0));
+        const leader = sorted[0];
+        const second = sorted[1];
+        if (leader && totals[leader.id] > 0) {
+          const lead = totals[leader.id] - (second ? totals[second.id] : 0);
+          setSubhead({
+            tone: 'live',
+            text: lead === 0
+              ? `${leader.name} and ${second.name} are tied at ${totals[leader.id]} points.`
+              : `${leader.name} leads by ${lead} point${lead === 1 ? '' : 's'}.`,
+          });
+        }
+      }
+    } else if (featured?.status === 'upcoming') {
+      setSubhead({ text: `Week ${featured.week_number} is up next.` });
+    }
+
+    setLoading(false);
+  }, [playerId]);
 
   useEffect(() => {
-    async function load() {
-      const { data: episodes } = await supabase
-        .from('episodes')
-        .select('*')
-        .order('week_number', { ascending: true });
-
-      const open = episodes?.find((e) => e.status === 'open') || null;
-      const locked = episodes?.find((e) => e.status === 'locked') || null;
-      const upcoming = episodes?.find((e) => e.status === 'upcoming') || null;
-      const fallback = episodes && episodes.length > 0 ? episodes[episodes.length - 1] : null;
-      const featured = open || locked || upcoming || fallback;
-      setCurrentEpisode(featured);
-
-      // Build a stateful subhead.
-      if (featured?.status === 'open' && playerId) {
-        const totalCats = (featured.winner_guess_points ? 1 : 0) + CATEGORIES.length;
-        const { data: picks } = await supabase
-          .from('picks')
-          .select('id')
-          .eq('player_id', playerId)
-          .eq('episode_id', featured.id);
-        const filled = picks?.length || 0;
-        setSubhead({
-          tone: 'live',
-          text: filled === 0
-            ? `Picks are open for week ${featured.week_number} — make yours.`
-            : filled < totalCats
-              ? `You've made ${filled} of ${totalCats} picks for week ${featured.week_number}.`
-              : `All ${totalCats} picks in for week ${featured.week_number}. Update anytime before lock.`,
-        });
-      } else if (featured?.status === 'open') {
-        setSubhead({ tone: 'live', text: `Picks are open for week ${featured.week_number}.` });
-      } else if (featured?.status === 'locked') {
-        setSubhead({ text: `Week ${featured.week_number} is locked. Tune in for the results.` });
-      } else if (featured?.status === 'scored') {
-        // Show top of leaderboard if available.
-        const [{ data: players }, { data: scores }] = await Promise.all([
-          supabase.from('players').select('*'),
-          supabase.from('scores').select('*'),
-        ]);
-        if (players && players.length > 0) {
-          const totals: Record<string, number> = {};
-          players.forEach((p: Player) => (totals[p.id] = 0));
-          scores?.forEach((s) => (totals[s.player_id] = (totals[s.player_id] || 0) + s.points));
-          const sorted = [...players].sort((a, b) => (totals[b.id] || 0) - (totals[a.id] || 0));
-          const leader = sorted[0];
-          const second = sorted[1];
-          if (leader && totals[leader.id] > 0) {
-            const lead = totals[leader.id] - (second ? totals[second.id] : 0);
-            setSubhead({
-              tone: 'live',
-              text: lead === 0
-                ? `${leader.name} and ${second.name} are tied at ${totals[leader.id]} points.`
-                : `${leader.name} leads by ${lead} point${lead === 1 ? '' : 's'}.`,
-            });
-          }
-        }
-      } else if (featured?.status === 'upcoming') {
-        setSubhead({ text: `Week ${featured.week_number} is up next.` });
-      }
-
-      setLoading(false);
-    }
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- load-on-mount fetch; also re-runs when the player changes
     load();
-  }, [playerId]);
+  }, [load]);
+
+  // An 'open' episode past its deadline reads as locked everywhere, not just on /picks.
+  const deadlinePassed = isDeadlinePassed(currentEpisode, now);
+  const picksOpen = currentEpisode?.status === 'open' && !deadlinePassed;
+  const showLockedCta = currentEpisode?.status === 'locked' || deadlinePassed;
+  const displaySubhead: Subhead = deadlinePassed && currentEpisode
+    ? { text: `Week ${currentEpisode.week_number} is locked. Tune in for the results.` }
+    : subhead;
 
   return (
     <div className="space-y-8 stagger">
-      <Onboarding />
 
       {/* Hero header */}
       <header className="pt-2 md:pt-4 max-w-2xl">
         <h1 className="font-display text-[2.25rem] md:text-[2.75rem] leading-[1.05] tracking-[-0.02em] text-ink">
           Fantasy Bake Off
         </h1>
-        <p className={`mt-2 text-[15px] ${subhead.tone === 'live' ? 'text-ink' : 'text-ink-secondary'}`}>
-          {subhead.tone === 'live' && (
+        <p className={`mt-2 text-[15px] ${displaySubhead.tone === 'live' ? 'text-ink' : 'text-ink-secondary'}`}>
+          {displaySubhead.tone === 'live' && (
             <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber mr-2 align-middle animate-pulse-soft" />
           )}
-          {subhead.text}
+          {displaySubhead.text}
         </p>
       </header>
 
@@ -112,6 +138,20 @@ export default function Home() {
           <div className="skeleton h-8 w-3/4 mb-3" />
           <div className="skeleton h-12 w-full" />
         </div>
+      ) : loadError ? (
+        <section className="card-hero p-8 md:p-10 text-center">
+          <div className="w-14 h-14 rounded-full bg-terracotta-subtle flex items-center justify-center mx-auto mb-4">
+            <AlertCircle size={24} className="text-terracotta" />
+          </div>
+          <h2 className="font-display text-2xl text-ink mb-1.5">Couldn&apos;t reach the kitchen</h2>
+          <p className="text-ink-secondary mb-5 max-w-sm mx-auto">
+            The season is still there — we just couldn&apos;t load it. Check your connection.
+          </p>
+          <button onClick={load} className="btn btn-secondary btn-sm">
+            <RefreshCw size={14} />
+            Retry
+          </button>
+        </section>
       ) : currentEpisode ? (
         <section className="card-hero p-6 md:p-8 relative">
           <EpisodeCard episode={currentEpisode} variant="hero" />
@@ -119,6 +159,11 @@ export default function Home() {
             {currentEpisode.theme}
           </h2>
           {currentEpisode.status === 'open' && (
+            <div className="mt-4 relative z-10">
+              <DeadlineNotice episode={currentEpisode} />
+            </div>
+          )}
+          {picksOpen && (
             <Link
               href="/picks"
               className="btn btn-primary btn-lg w-full mt-6 group relative z-10"
@@ -128,7 +173,7 @@ export default function Home() {
               <ArrowRight size={16} className="ml-auto opacity-60 group-hover:translate-x-0.5 transition-transform" />
             </Link>
           )}
-          {currentEpisode.status === 'locked' && (
+          {showLockedCta && (
             <Link
               href={`/episodes/${currentEpisode.week_number}`}
               className="btn btn-secondary w-full mt-6 relative z-10"
@@ -188,10 +233,16 @@ export default function Home() {
             ))}
             <div className="flex items-center justify-between text-sm py-1.5 px-3 rounded-md bg-cream/70">
               <span className="text-ink font-medium">Winner Guess</span>
-              <span className="text-ink-secondary font-semibold tabular-nums">7–10 pts</span>
+              <span className="text-ink-secondary font-semibold">Set per week</span>
             </div>
           </div>
           <div className="mt-4 space-y-1.5 text-xs text-ink-muted leading-relaxed">
+            <p>
+              <span className="font-semibold text-ink-secondary">Winner Guess:</span> Only runs on the weeks the commissioner opens it — usually 10 points in week 1 and 7 in week 5.
+            </p>
+            <p>
+              <span className="font-semibold text-ink-secondary">Deadline:</span> Picks close at the time shown on the episode. After that the week is locked.
+            </p>
             <p>
               <span className="font-semibold text-ink-secondary">Lock:</span> You can lock ONE pick per week for 2× points if correct, but lose half if wrong.
             </p>

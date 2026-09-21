@@ -16,29 +16,41 @@ export default function Onboarding() {
   const [visible, setVisible] = useState(false);
   const [step, setStep] = useState(0);
   const [players, setPlayers] = useState<Player[]>([]);
-  const [selectedPlayer, setSelectedPlayer] = useState<Player | null>(null);
+  const [playersLoading, setPlayersLoading] = useState(true);
+  const [playersError, setPlayersError] = useState(false);
   const [pinPrompt, setPinPrompt] = useState<Player | null>(null);
   const [pinInput, setPinInput] = useState('');
   const [pinError, setPinError] = useState(false);
 
+  // selectedPlayer is fully derived from playerId + players, so there's no
+  // separate state to keep in sync — it just recomputes on every render.
+  const selectedPlayer = players.find((p) => p.id === playerId) || null;
+
   useEffect(() => {
     if (typeof window === 'undefined') return;
     if (localStorage.getItem(ONBOARDING_KEY) !== 'done') {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- localStorage hydration, must run on mount
       setVisible(true);
     }
   }, []);
 
-  useEffect(() => {
-    supabase.from('players').select('*').order('name').then(({ data }) => {
-      if (data) setPlayers(data);
+  const fetchPlayers = useCallback(() => {
+    setPlayersLoading(true);
+    setPlayersError(false);
+    supabase.from('players').select('*').order('name').then(({ data, error }) => {
+      if (error) {
+        setPlayersError(true);
+      } else {
+        setPlayers(data || []);
+      }
+      setPlayersLoading(false);
     });
   }, []);
 
   useEffect(() => {
-    if (playerId && players.length > 0) {
-      setSelectedPlayer(players.find((p) => p.id === playerId) || null);
-    }
-  }, [playerId, players]);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- initial load-on-mount fetch
+    fetchPlayers();
+  }, [fetchPlayers]);
 
   const finish = useCallback(() => {
     localStorage.setItem(ONBOARDING_KEY, 'done');
@@ -57,7 +69,6 @@ export default function Onboarding() {
       setPinError(false);
     } else {
       setPlayerId(player.id);
-      setSelectedPlayer(player);
     }
   }
 
@@ -65,7 +76,6 @@ export default function Onboarding() {
     if (!pinPrompt) return;
     if (pinInput === pinPrompt.pin) {
       setPlayerId(pinPrompt.id);
-      setSelectedPlayer(pinPrompt);
       setPinPrompt(null);
     } else {
       setPinError(true);
@@ -76,7 +86,6 @@ export default function Onboarding() {
     if (!selectedPlayer) return;
     await supabase.from('players').update({ color: colorKey }).eq('id', selectedPlayer.id);
     const updated = { ...selectedPlayer, color: colorKey as Player['color'] };
-    setSelectedPlayer(updated);
     setPlayers((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
   }
 
@@ -87,7 +96,11 @@ export default function Onboarding() {
 
   if (!visible) return null;
 
-  const canAdvance = step === 1 ? !!selectedPlayer : true;
+  // Don't leave the user stuck behind a disabled Next button when there's
+  // nobody to pick (fetch failed, or the commissioner hasn't added anyone
+  // yet) — only require a selection once we know players are actually there.
+  const canAdvance =
+    step === 1 ? !!selectedPlayer || playersError || (!playersLoading && players.length === 0) : true;
 
   const steps = [
     // Step 0: Welcome
@@ -112,33 +125,51 @@ export default function Onboarding() {
         <h2 className="font-display text-xl text-ink">Who are you?</h2>
         <p className="text-sm text-ink-muted mt-1">Tap your name to get started</p>
       </div>
-      <div className="grid grid-cols-2 gap-2">
-        {players.map((player) => {
-          const color = getPlayerColor(player.color);
-          const isSelected = selectedPlayer?.id === player.id;
-          return (
-            <button
-              key={player.id}
-              onClick={() => handlePlayerClick(player)}
-              className={`p-3 rounded-xl flex items-center gap-2.5 text-left transition-all border ${
-                isSelected
-                  ? 'bg-amber-subtle border-amber ring-1 ring-amber/20'
-                  : 'bg-surface border-border hover:border-ink-faint'
-              }`}
-            >
-              <span className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold shrink-0" style={{ background: color.bg, color: color.text }}>
-                {player.name[0]}
-              </span>
-              <span className="font-semibold text-ink text-sm">{player.name}</span>
-            </button>
-          );
-        })}
-      </div>
+      {playersLoading ? (
+        <div className="grid grid-cols-2 gap-2">
+          {[...Array(4)].map((_, i) => <div key={i} className="skeleton h-[52px] w-full rounded-xl" />)}
+        </div>
+      ) : playersError ? (
+        <div className="text-center py-4">
+          <p className="text-sm text-red-700 mb-3">Couldn&apos;t reach the server</p>
+          <button onClick={fetchPlayers} className="btn btn-secondary btn-sm">Retry</button>
+        </div>
+      ) : players.length === 0 ? (
+        <p className="text-sm text-ink-muted text-center py-4">
+          No players yet — ask the commissioner to add you in Admin.
+        </p>
+      ) : (
+        <div className="grid grid-cols-2 gap-2">
+          {players.map((player) => {
+            const color = getPlayerColor(player.color);
+            const isSelected = selectedPlayer?.id === player.id;
+            return (
+              <button
+                key={player.id}
+                onClick={() => handlePlayerClick(player)}
+                className={`p-3 rounded-xl flex items-center gap-2.5 text-left transition-all border ${
+                  isSelected
+                    ? 'bg-amber-subtle border-amber ring-1 ring-amber/20'
+                    : 'bg-surface border-border hover:border-ink-faint'
+                }`}
+              >
+                <span className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold shrink-0" style={{ background: color.bg, color: color.text }}>
+                  {player.name[0]}
+                </span>
+                <span className="font-semibold text-ink text-sm">{player.name}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
       {pinPrompt && (
         <div className="p-3 rounded-xl border border-border bg-cream animate-fade-up">
-          <p className="text-sm font-medium text-ink mb-2">Enter PIN for {pinPrompt.name}</p>
+          <label htmlFor="onboarding-pin-input" className="text-sm font-medium text-ink mb-2 block">
+            Enter PIN for {pinPrompt.name}
+          </label>
           <div className="flex gap-2">
             <input
+              id="onboarding-pin-input"
               type="password"
               inputMode="numeric"
               maxLength={4}
@@ -285,9 +316,9 @@ export default function Onboarding() {
   ];
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm animate-fade-in">
-      <div className="w-full max-w-md mx-4 animate-fade-up">
-        <div className="card p-6 shadow-xl">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm animate-fade-in p-4">
+      <div className="w-full max-w-md animate-fade-up">
+        <div className="card p-6 shadow-xl max-h-[85vh] overflow-y-auto">
           {/* Progress dots */}
           <div className="flex items-center justify-center gap-1.5 mb-6">
             {Array.from({ length: TOTAL_STEPS }).map((_, i) => (

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import Cropper, { Area } from 'react-easy-crop';
 import { X } from 'lucide-react';
 
@@ -12,8 +12,11 @@ interface ImageCropModalProps {
 
 async function getCroppedImg(imageSrc: string, crop: Area): Promise<Blob> {
   const image = new Image();
-  image.src = imageSrc;
-  await new Promise((resolve) => (image.onload = resolve));
+  await new Promise<void>((resolve, reject) => {
+    image.onload = () => resolve();
+    image.onerror = () => reject(new Error('That file could not be read as an image.'));
+    image.src = imageSrc;
+  });
 
   const canvas = document.createElement('canvas');
   const size = 256;
@@ -44,6 +47,13 @@ export default function ImageCropModal({ file, onCrop, onCancel }: ImageCropModa
   const [zoom, setZoom] = useState(1);
   const [croppedArea, setCroppedArea] = useState<Area | null>(null);
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Revoke the object URL whenever this modal goes away, however it closes
+  // (save, cancel, or the parent unmounting it directly).
+  useEffect(() => {
+    return () => URL.revokeObjectURL(imageSrc);
+  }, [imageSrc]);
 
   const onCropComplete = useCallback((_: Area, croppedAreaPixels: Area) => {
     setCroppedArea(croppedAreaPixels);
@@ -52,8 +62,14 @@ export default function ImageCropModal({ file, onCrop, onCancel }: ImageCropModa
   async function handleSave() {
     if (!croppedArea) return;
     setSaving(true);
-    const blob = await getCroppedImg(imageSrc, croppedArea);
-    onCrop(blob);
+    setError(null);
+    try {
+      const blob = await getCroppedImg(imageSrc, croppedArea);
+      onCrop(blob);
+    } catch {
+      setError("That doesn't look like a valid image. Try a different file.");
+      setSaving(false);
+    }
   }
 
   return (
@@ -92,6 +108,7 @@ export default function ImageCropModal({ file, onCrop, onCancel }: ImageCropModa
               className="flex-1 accent-amber"
             />
           </div>
+          {error && <p className="text-xs text-red-700 text-center">{error}</p>}
           <div className="flex gap-2">
             <button onClick={onCancel} className="btn btn-secondary btn-sm flex-1">
               Cancel

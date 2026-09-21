@@ -17,10 +17,31 @@ interface ScoreRow {
   points: number;
 }
 
+interface RankedPlayer {
+  player: Player;
+  total: number;
+  rank: number;
+  tied: boolean;
+}
+
 function getInitials(name: string) {
   const parts = name.trim().split(/\s+/);
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
   return (parts[0][0] + parts[1][0]).toUpperCase();
+}
+
+// Standard competition ranking (1, 2, 2, 4, ...) so tied players share a
+// rank instead of the sort order arbitrarily picking a "leader" among them.
+function rankPlayers(playerList: Player[], totals: Record<string, number>): RankedPlayer[] {
+  const sorted = [...playerList].sort((a, b) => (totals[b.id] || 0) - (totals[a.id] || 0));
+  let currentRank = 0;
+  const ranked = sorted.map((player, i) => {
+    const total = totals[player.id] || 0;
+    const prevTotal = i > 0 ? (totals[sorted[i - 1].id] || 0) : null;
+    if (i === 0 || total !== prevTotal) currentRank = i + 1;
+    return { player, total, rank: currentRank };
+  });
+  return ranked.map((r) => ({ ...r, tied: ranked.filter((x) => x.rank === r.rank).length > 1 }));
 }
 
 export default function LeaderboardPage() {
@@ -77,11 +98,11 @@ export default function LeaderboardPage() {
     );
   }
 
-  const sortedPlayers = [...players].sort((a, b) => (totals[b.id] || 0) - (totals[a.id] || 0));
-  const leader = sortedPlayers[0];
-  const rest = sortedPlayers.slice(1);
-  const hasScores = leader && (totals[leader.id] || 0) > 0;
-  const leaderColor = leader ? getPlayerColor(leader.color) : null;
+  const ranked = rankPlayers(players, totals);
+  const hasScores = ranked.length > 0 && ranked[0].total > 0;
+  const leaders = ranked.length === 0 ? [] : hasScores ? ranked.filter((r) => r.rank === 1) : [ranked[0]];
+  const rest = ranked.slice(leaders.length);
+  const topTotal = ranked[0]?.total || 0;
 
   const renderBreakdown = (player: Player) => {
     const playerScores = allScores.filter((s) => s.player_id === player.id);
@@ -138,41 +159,49 @@ export default function LeaderboardPage() {
         </p>
       </header>
 
-      {/* Leader callout */}
-      {leader && leaderColor && (
-        <div
-          className="relative rounded-[20px] p-5 md:p-6 flex items-center gap-4 overflow-hidden"
-          style={{
-            background: hasScores
-              ? `linear-gradient(135deg, ${leaderColor.bg}1A 0%, var(--color-amber-subtle) 100%)`
-              : 'var(--color-cream-dark)',
-          }}
-        >
-          <span
-            className="w-14 h-14 md:w-16 md:h-16 rounded-full flex items-center justify-center text-lg font-bold shrink-0 shadow-sm"
-            style={{ background: leaderColor.bg, color: leaderColor.text }}
-          >
-            {getInitials(leader.name)}
-          </span>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-1.5">
-              <Crown size={12} className="text-amber" />
-              <span className="eyebrow text-amber-dark">
-                {hasScores ? 'In the lead' : 'No scores yet'}
-              </span>
-            </div>
-            <p className="font-display text-2xl md:text-3xl text-ink leading-tight truncate">
-              {leader.name}
-            </p>
-          </div>
-          <div className="text-right shrink-0">
-            <div className="font-display text-4xl md:text-5xl text-ink leading-none tabular-nums">
-              {totals[leader.id] || 0}
-            </div>
-            <div className="text-[10px] uppercase tracking-wider text-ink-muted font-semibold mt-1">
-              points
-            </div>
-          </div>
+      {/* Leader callout(s) */}
+      {leaders.length > 0 && (
+        <div className="space-y-3">
+          {leaders.map((entry) => {
+            const leaderColor = getPlayerColor(entry.player.color);
+            return (
+              <div
+                key={entry.player.id}
+                className="relative rounded-[20px] p-5 md:p-6 flex items-center gap-4 overflow-hidden"
+                style={{
+                  background: hasScores
+                    ? `linear-gradient(135deg, ${leaderColor.bg}1A 0%, var(--color-amber-subtle) 100%)`
+                    : 'var(--color-cream-dark)',
+                }}
+              >
+                <span
+                  className="w-14 h-14 md:w-16 md:h-16 rounded-full flex items-center justify-center text-lg font-bold shrink-0 shadow-sm"
+                  style={{ background: leaderColor.bg, color: leaderColor.text }}
+                >
+                  {getInitials(entry.player.name)}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <Crown size={12} className="text-amber" />
+                    <span className="eyebrow text-amber-dark">
+                      {hasScores ? (leaders.length > 1 ? 'Tied for the lead' : 'In the lead') : 'No scores yet'}
+                    </span>
+                  </div>
+                  <p className="font-display text-2xl md:text-3xl text-ink leading-tight truncate">
+                    {entry.player.name}
+                  </p>
+                </div>
+                <div className="text-right shrink-0">
+                  <div className="font-display text-4xl md:text-5xl text-ink leading-none tabular-nums">
+                    {entry.total}
+                  </div>
+                  <div className="text-[10px] uppercase tracking-wider text-ink-muted font-semibold mt-1">
+                    points
+                  </div>
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -181,32 +210,31 @@ export default function LeaderboardPage() {
         <section>
           <h2 className="eyebrow mb-3">The rest of the field</h2>
           <ul className="divide-y divide-border/60">
-            {rest.map((player, i) => {
-              const color = getPlayerColor(player.color);
-              const rank = i + 2;
-              const isExpanded = expandedPlayer === player.id;
-              const gap = (totals[leader!.id] || 0) - (totals[player.id] || 0);
+            {rest.map((entry) => {
+              const color = getPlayerColor(entry.player.color);
+              const isExpanded = expandedPlayer === entry.player.id;
+              const gap = topTotal - entry.total;
               return (
-                <li key={player.id}>
+                <li key={entry.player.id}>
                   <button
-                    onClick={() => setExpandedPlayer(isExpanded ? null : player.id)}
+                    onClick={() => setExpandedPlayer(isExpanded ? null : entry.player.id)}
                     className="w-full flex items-center gap-3 py-3 px-2 hover:bg-cream/60 rounded-md transition-colors text-left"
                   >
-                    <span className="w-5 text-xs font-semibold text-ink-muted tabular-nums text-right">
-                      {rank}
+                    <span className="w-8 text-xs font-semibold text-ink-muted tabular-nums text-right">
+                      {entry.tied ? `T-${entry.rank}` : entry.rank}
                     </span>
                     <span
                       className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
                       style={{ background: color.bg, color: color.text }}
                     >
-                      {getInitials(player.name)}
+                      {getInitials(entry.player.name)}
                     </span>
-                    <span className="font-medium text-ink flex-1 truncate">{player.name}</span>
+                    <span className="font-medium text-ink flex-1 truncate">{entry.player.name}</span>
                     {hasScores && gap > 0 && (
                       <span className="text-xs text-ink-faint tabular-nums">−{gap}</span>
                     )}
                     <span className="font-semibold tabular-nums text-ink min-w-[2.5rem] text-right">
-                      {totals[player.id] || 0}
+                      {entry.total}
                     </span>
                     <ChevronDown
                       size={14}
@@ -215,7 +243,7 @@ export default function LeaderboardPage() {
                   </button>
                   {isExpanded && (
                     <div className="ml-10 mr-2 mb-2 rounded-[12px] bg-cream-dark/60 overflow-hidden">
-                      {renderBreakdown(player)}
+                      {renderBreakdown(entry.player)}
                     </div>
                   )}
                 </li>
@@ -244,16 +272,16 @@ export default function LeaderboardPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {sortedPlayers.map((player, pi) => (
-                    <tr key={player.id} className={pi < sortedPlayers.length - 1 ? 'border-b border-border/40' : ''}>
+                  {ranked.map((entry, pi) => (
+                    <tr key={entry.player.id} className={pi < ranked.length - 1 ? 'border-b border-border/40' : ''}>
                       <td className="p-3 pl-4 sticky left-0 bg-surface z-10">
                         <div className="flex items-center gap-2">
-                          <span className="w-2 h-2 rounded-full shrink-0" style={{ background: getPlayerColor(player.color).bg }} />
-                          <span className={`text-ink ${pi === 0 ? 'font-bold' : 'font-medium'} truncate`}>{player.name}</span>
+                          <span className="w-2 h-2 rounded-full shrink-0" style={{ background: getPlayerColor(entry.player.color).bg }} />
+                          <span className={`text-ink ${entry.rank === 1 ? 'font-bold' : 'font-medium'} truncate`}>{entry.player.name}</span>
                         </div>
                       </td>
                       {weekScores.map((ws) => {
-                        const pts = ws.scores[player.id] || 0;
+                        const pts = ws.scores[entry.player.id] || 0;
                         return (
                           <td key={ws.episode.id} className="text-center px-2 py-3">
                             <span className={`tabular-nums ${
@@ -265,8 +293,8 @@ export default function LeaderboardPage() {
                         );
                       })}
                       <td className="text-center px-3 py-3">
-                        <span className={`tabular-nums ${pi === 0 ? 'font-bold text-ink' : 'font-semibold text-ink-secondary'}`}>
-                          {totals[player.id] || 0}
+                        <span className={`tabular-nums ${entry.rank === 1 ? 'font-bold text-ink' : 'font-semibold text-ink-secondary'}`}>
+                          {entry.total}
                         </span>
                       </td>
                     </tr>

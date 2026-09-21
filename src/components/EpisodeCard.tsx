@@ -2,6 +2,9 @@
 
 import Link from 'next/link';
 import { Episode, EpisodeStatus } from '@/lib/types';
+import { isDeadlinePassed } from '@/lib/deadline';
+import { useNow } from '@/lib/useNow';
+import DeadlineNotice from '@/components/DeadlineNotice';
 import { ChevronRight, Radio, Lock, CheckCircle2, Clock } from 'lucide-react';
 
 const STATUS_CONFIG: Record<EpisodeStatus, { label: string; className: string; icon: typeof Clock }> = {
@@ -17,15 +20,20 @@ interface EpisodeCardProps {
 }
 
 export default function EpisodeCard({ episode, variant = 'list' }: EpisodeCardProps) {
-  const config = STATUS_CONFIG[episode.status];
+  const now = useNow();
+  // An 'open' episode whose deadline has gone is locked as far as anyone here is concerned,
+  // even if the commissioner hasn't flipped the row yet.
+  const effectiveStatus: EpisodeStatus = isDeadlinePassed(episode, now) ? 'locked' : episode.status;
+  const config = STATUS_CONFIG[effectiveStatus];
   const Icon = config.icon;
+  const showDeadline = episode.status === 'open';
 
   if (variant === 'hero') {
     return (
       <div className="flex items-baseline gap-3">
         <span className="eyebrow shrink-0">Week {episode.week_number}</span>
         <span className={`badge ${config.className}`}>
-          <Icon size={10} className={episode.status === 'open' ? 'animate-pulse-soft' : ''} />
+          <Icon size={10} className={effectiveStatus === 'open' ? 'animate-pulse-soft' : ''} />
           {config.label}
         </span>
       </div>
@@ -40,11 +48,12 @@ export default function EpisodeCard({ episode, variant = 'list' }: EpisodeCardPr
         </div>
         <div className="flex-1 min-w-0">
           <p className="font-semibold text-ink truncate">{episode.theme}</p>
-          <div className="flex items-center gap-2 mt-0.5">
+          <div className="flex items-center gap-2 mt-0.5 flex-wrap">
             <span className={`badge ${config.className}`}>
               <Icon size={10} />
               {config.label}
             </span>
+            {showDeadline && <DeadlineNotice episode={episode} variant="compact" />}
           </div>
         </div>
         <ChevronRight size={18} className="text-ink-faint shrink-0" />

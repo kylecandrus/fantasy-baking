@@ -10,6 +10,7 @@ export function usePlayer() {
 
   useEffect(() => {
     const stored = localStorage.getItem(PLAYER_KEY);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- localStorage hydration, must run on mount
     setPlayerIdState(stored);
     setLoaded(true);
   }, []);
@@ -34,6 +35,7 @@ export function useAdmin() {
 
   useEffect(() => {
     const stored = localStorage.getItem(ADMIN_KEY);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- localStorage hydration, must run on mount
     setIsAdminState(stored === 'true');
     setLoaded(true);
   }, []);

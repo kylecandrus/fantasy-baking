@@ -5,9 +5,10 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { Episode, Contestant, Pick, Result, PickCategory, CATEGORIES, WINNER_GUESS_CATEGORY } from '@/lib/types';
-import { useAdmin } from '@/hooks/usePlayer';
+import { useAdmin, usePlayer } from '@/hooks/usePlayer';
+import { markWeekWatched } from '@/hooks/useWatched';
 import { calculatePickScore, calculateWinnerGuessScore } from '@/lib/scoring';
-import { ArrowLeft, Check, Save, Trophy, AlertCircle, Crown, Ban } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, Trophy, AlertCircle, Crown, Ban, Pencil } from 'lucide-react';
 import ContestantAvatar from '@/components/ContestantAvatar';
 
 // Star Baker / Technical Winner / Technical Loser always happen. A Hollywood handshake
@@ -20,6 +21,9 @@ export default function AdminResultsPage() {
   const router = useRouter();
   const weekNumber = Number(params.week);
   const { isAdmin, loaded: adminLoaded } = useAdmin();
+  const { playerId } = usePlayer();
+  // One category per screen on the way through, then a review screen.
+  const [step, setStep] = useState(0);
 
   const [episode, setEpisode] = useState<Episode | null>(null);
   const [contestants, setContestants] = useState<Contestant[]>([]);
@@ -75,14 +79,17 @@ export default function AdminResultsPage() {
   const requiredFilled = REQUIRED_CATEGORIES.filter((key) => results[key]).length;
   const allRequiredFilled = requiredFilled === REQUIRED_CATEGORIES.length;
 
-  function selectResult(category: PickCategory, contestantId: string | null) {
+  function choose(category: PickCategory, contestantId: string | null) {
     setSaved(false);
     setConfirmingScore(false);
-    setResults((prev) => ({ ...prev, [category]: prev[category] === contestantId ? '' : contestantId || '' }));
+    setError(null);
+    setResults((prev) => ({ ...prev, [category]: contestantId || '' }));
+    // Brief pause so the tap visibly lands before the next category slides in.
+    setTimeout(() => setStep((current) => current + 1), 180);
   }
 
-  async function saveResults() {
-    if (!episode) return;
+  async function saveResults(): Promise<boolean> {
+    if (!episode) return false;
     setSaving(true);
     setSaved(false);
     setConfirmingScore(false);
@@ -100,14 +107,14 @@ export default function AdminResultsPage() {
         .delete()
         .eq('episode_id', episode.id)
         .in('category', clearedKeys);
-      if (clearError) { setSaving(false); setError('Failed to clear results. Try again.'); return; }
+      if (clearError) { setSaving(false); setError('Failed to clear results. Try again.'); return false; }
     }
 
     if (filledRows.length > 0) {
       const { error: upsertError } = await supabase
         .from('results')
         .upsert(filledRows, { onConflict: 'episode_id,category' });
-      if (upsertError) { setSaving(false); setError('Failed to save results. Try again.'); return; }
+      if (upsertError) { setSaving(false); setError('Failed to save results. Try again.'); return false; }
     }
 
     const sentHomeId = results['sent_home'] || null;
@@ -120,14 +127,14 @@ export default function AdminResultsPage() {
       .eq('eliminated_week', episode.week_number);
     if (sentHomeId) unelimQuery = unelimQuery.neq('id', sentHomeId);
     const { error: unelimError } = await unelimQuery;
-    if (unelimError) { setSaving(false); setError('Results saved but failed to un-eliminate the previous contestant.'); return; }
+    if (unelimError) { setSaving(false); setError('Results saved but failed to un-eliminate the previous contestant.'); return false; }
 
     if (sentHomeId) {
       const { error: elimError } = await supabase
         .from('contestants')
         .update({ eliminated_week: episode.week_number })
         .eq('id', sentHomeId);
-      if (elimError) { setSaving(false); setError('Results saved but failed to mark contestant as eliminated.'); return; }
+      if (elimError) { setSaving(false); setError('Results saved but failed to mark contestant as eliminated.'); return false; }
     }
 
     setContestants((prev) =>
@@ -141,6 +148,13 @@ export default function AdminResultsPage() {
     setSaving(false);
     setSaved(true);
     setExistingResults(true);
+    // Whoever is entering results has obviously watched — don't spoiler-gate them.
+    markWeekWatched(playerId, episode.week_number);
+    return true;
+  }
+
+  async function saveAndScore() {
+    if (await saveResults()) await scoreEpisode();
   }
 
   async function scoreEpisode() {
@@ -271,8 +285,13 @@ export default function AdminResultsPage() {
     );
   }
 
+  const reviewStep = editableCategories.length;
+  const onReview = step >= reviewStep;
+  const cat = onReview ? null : editableCategories[step];
+  const busy = saving || scoring;
+
   return (
-    <div className="space-y-5">
+    <div className="space-y-5 pb-24 md:pb-6">
       <div>
         <Link href="/admin/episodes" className="inline-flex items-center gap-1 text-sm text-ink-muted hover:text-ink transition-colors mb-1">
           <ArrowLeft size={14} /> Episodes
@@ -281,156 +300,199 @@ export default function AdminResultsPage() {
         <p className="text-ink-muted text-sm">Week {episode.week_number} &middot; {episode.theme}</p>
       </div>
 
-      {existingResults && (
-        <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-amber-subtle border border-amber/15 text-sm text-amber-dark">
-          <AlertCircle size={16} className="shrink-0" />
-          Results already entered. You can update them below.
+      {/* Progress — tap a segment to jump */}
+      <div className="flex items-center gap-1.5" role="group" aria-label="Steps">
+        {[...editableCategories.map((c) => c.label), 'Review'].map((label, i) => (
+          <button
+            key={label}
+            onClick={() => setStep(i)}
+            aria-label={`Go to ${label}`}
+            aria-current={i === Math.min(step, reviewStep) ? 'step' : undefined}
+            className="flex-1 py-2 cursor-pointer"
+          >
+            <span
+              className={`block h-1.5 rounded-full transition-colors ${
+                i === Math.min(step, reviewStep) ? 'bg-amber-btn' : i < step ? 'bg-amber/50' : 'bg-cream-dark'
+              }`}
+            />
+          </button>
+        ))}
+      </div>
+
+      {cat && (
+        <div key={cat.key} className="space-y-4 animate-fade-up">
+          <div className="flex items-end justify-between gap-3">
+            <div>
+              <p className="eyebrow">
+                {step + 1} of {editableCategories.length}
+              </p>
+              <h2 className="flex items-center gap-1.5 font-display text-2xl text-ink leading-tight">
+                {cat.key === 'winner_guess' && <Crown size={18} className="text-amber-dark" />}
+                {cat.label}
+              </h2>
+            </div>
+            <span className="text-xs font-medium text-ink-muted bg-cream-dark px-2 py-1 rounded-md shrink-0">
+              {cat.key === 'winner_guess' ? 'Season payout' : `${cat.points} pts`}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+            {(cat.key === 'winner_guess' ? contestants : activeContestants).map((c) => {
+              const selected = results[cat.key] === c.id;
+              return (
+                <button
+                  key={c.id}
+                  onClick={() => choose(cat.key, c.id)}
+                  aria-pressed={selected}
+                  className={`relative min-h-[104px] p-2.5 rounded-2xl text-sm font-medium text-center transition-all border cursor-pointer active:scale-[0.97] ${
+                    selected
+                      ? 'bg-amber-subtle border-amber text-amber-dark ring-2 ring-amber/30'
+                      : 'bg-surface border-border text-ink-secondary hover:border-ink-faint'
+                  }`}
+                >
+                  {selected && <Check size={14} strokeWidth={3} className="absolute top-2 right-2 text-amber-dark" />}
+                  <ContestantAvatar contestant={c} className="w-14 h-14 text-base mx-auto mb-1.5" />
+                  <span className="block leading-tight">{c.name}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          {OPTIONAL_CATEGORIES.includes(cat.key) && (
+            <button
+              onClick={() => choose(cat.key, null)}
+              className="btn btn-secondary btn-lg w-full border-dashed"
+            >
+              <Ban size={16} />
+              {cat.key === 'handshake' ? 'No handshake this week' : 'Nobody went home'}
+            </button>
+          )}
+
+          <div className="flex gap-2">
+            <button onClick={() => setStep(step - 1)} disabled={step === 0} className="btn btn-secondary flex-1 min-h-12">
+              <ArrowLeft size={16} /> Back
+            </button>
+            <button onClick={() => setStep(step + 1)} className="btn btn-secondary flex-1 min-h-12">
+              {results[cat.key] || OPTIONAL_CATEGORIES.includes(cat.key) ? 'Next' : 'Skip'} <ArrowRight size={16} />
+            </button>
+          </div>
         </div>
       )}
 
-      <div className="card p-4">
-        <button
-          onClick={() => { setIsFinale(!isFinale); setConfirmingScore(false); }}
-          aria-pressed={isFinale}
-          className="flex items-start gap-3 w-full text-left cursor-pointer"
-        >
-          <span
-            className={`mt-0.5 w-5 h-5 shrink-0 rounded-md border flex items-center justify-center transition-all ${
-              isFinale ? 'bg-amber-btn border-amber-btn text-white' : 'bg-surface border-border text-transparent'
-            }`}
-          >
-            <Check size={13} strokeWidth={3} />
-          </span>
-          <span>
-            <span className="flex items-center gap-1.5 font-semibold text-ink">
-              <Crown size={14} className="text-amber-dark" />
-              This is the final — record the season winner
-            </span>
-            <span className="block text-xs text-ink-muted mt-0.5">
-              Scoring this episode will also pay out every winner guess made earlier in the season.
-            </span>
-          </span>
-        </button>
-      </div>
+      {onReview && (
+        <div className="space-y-4 animate-fade-up">
+          <div>
+            <p className="eyebrow">Review</p>
+            <h2 className="font-display text-2xl text-ink leading-tight">Does this look right?</h2>
+          </div>
 
-      <div className="space-y-4 stagger">
-        {editableCategories.map((cat) => {
-          const optional = OPTIONAL_CATEGORIES.includes(cat.key);
-          const isWinner = cat.key === 'winner_guess';
-          const pool = isWinner ? contestants : activeContestants;
-          const none = !results[cat.key];
-          return (
-            <div key={cat.key} className="card p-4">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="flex items-center gap-1.5 font-semibold text-ink">
-                  {isWinner && <Crown size={14} className="text-amber-dark" />}
-                  {cat.label}
-                </h3>
-                <div className="flex items-center gap-1.5">
-                  {optional && (
-                    <span className="text-xs font-medium text-ink-muted bg-cream-dark px-2 py-0.5 rounded-md">Optional</span>
-                  )}
-                  {isWinner ? (
-                    <span className="text-xs font-medium text-amber-dark bg-amber-subtle px-2 py-0.5 rounded-md">Season payout</span>
+          <div className="card overflow-hidden divide-y divide-border/60">
+            {editableCategories.map((c, i) => {
+              const chosen = contestants.find((x) => x.id === results[c.key]);
+              const required = REQUIRED_CATEGORIES.includes(c.key) || c.key === 'winner_guess';
+              return (
+                <button
+                  key={c.key}
+                  onClick={() => setStep(i)}
+                  className="w-full min-h-16 px-4 py-3 flex items-center gap-3 text-left cursor-pointer hover:bg-cream/60 transition-colors"
+                >
+                  <span className="text-xs text-ink-muted w-24 shrink-0 leading-tight">{c.label}</span>
+                  {chosen ? (
+                    <>
+                      <ContestantAvatar contestant={chosen} className="w-9 h-9 text-xs" />
+                      <span className="font-semibold text-ink flex-1 min-w-0 truncate">{chosen.name}</span>
+                    </>
                   ) : (
-                    <span className="text-xs font-medium text-ink-muted bg-cream-dark px-2 py-0.5 rounded-md">{cat.points} pts</span>
+                    <span className={`flex-1 text-sm ${required ? 'font-medium text-terracotta' : 'text-ink-muted'}`}>
+                      {required ? 'Tap to choose' : 'None this week'}
+                    </span>
                   )}
-                </div>
-              </div>
-              <div className="grid grid-cols-3 sm:grid-cols-4 gap-1.5">
-                {optional && (
-                  <button
-                    onClick={() => selectResult(cat.key, null)}
-                    className={`relative p-2.5 rounded-xl text-sm font-medium text-center transition-all border cursor-pointer ${
-                      none
-                        ? 'bg-cream-dark border-ink-faint text-ink-secondary ring-1 ring-ink-faint/20'
-                        : 'bg-surface border-border border-dashed text-ink-muted hover:border-ink-faint'
-                    }`}
-                  >
-                    {none && <Check size={12} className="absolute top-1.5 right-1.5 text-ink-muted" />}
-                    <Ban size={12} className="inline-block mr-1 -mt-0.5" />
-                    None this week
-                  </button>
-                )}
-                {pool.map((c) => {
-                  const selected = results[cat.key] === c.id;
-                  return (
-                    <button
-                      key={c.id}
-                      onClick={() => selectResult(cat.key, c.id)}
-                      className={`relative p-2.5 rounded-xl text-sm font-medium text-center transition-all border cursor-pointer ${
-                        selected
-                          ? 'bg-amber-subtle border-amber text-amber-dark ring-1 ring-amber/20'
-                          : 'bg-surface border-border text-ink-secondary hover:border-ink-faint'
-                      }`}
-                    >
-                      {selected && <Check size={12} className="absolute top-1.5 right-1.5 text-amber" />}
-                      <ContestantAvatar contestant={c} className="w-10 h-10 text-sm mx-auto mb-1.5" />
-                      <span className="block leading-tight">{c.name}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      <div className="space-y-2 sticky bottom-20 md:bottom-4 z-40 pt-2">
-        {error && (
-          <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-red-50 border border-red-200 text-sm text-red-700">
-            <AlertCircle size={16} className="shrink-0" />
-            {error}
+                  <Pencil size={14} className="text-ink-faint shrink-0" aria-hidden="true" />
+                </button>
+              );
+            })}
           </div>
-        )}
-        <button
-          onClick={saveResults}
-          disabled={saving || !allRequiredFilled}
-          className={`btn btn-lg w-full shadow-lg ${saved ? 'btn-success' : 'btn-primary'}`}
-        >
-          {saved ? <Check size={18} /> : <Save size={18} />}
-          {saving
-            ? 'Saving...'
-            : saved
-              ? 'Results saved'
-              : allRequiredFilled
-                ? existingResults ? 'Update Results' : 'Save Results'
-                : `Save Results (${requiredFilled}/${REQUIRED_CATEGORIES.length} required)`}
-        </button>
 
-        {existingResults && !confirmingScore && (
           <button
-            onClick={() => { setError(null); setConfirmingScore(true); }}
-            disabled={scoring}
-            className="btn btn-success btn-lg w-full shadow-lg"
+            onClick={() => {
+              const next = !isFinale;
+              setIsFinale(next);
+              setConfirmingScore(false);
+              // Turning it on adds a Season Winner step at the end — go straight there.
+              if (next) setStep(CATEGORIES.length);
+            }}
+            aria-pressed={isFinale}
+            className="card p-4 flex items-start gap-3 w-full text-left cursor-pointer"
           >
-            <Trophy size={18} />
-            {scoring ? 'Scoring...' : 'Score Episode & Lock'}
-          </button>
-        )}
-
-        {existingResults && confirmingScore && (
-          <div className="card p-4 space-y-3 shadow-lg animate-fade-up">
-            <div className="flex items-start gap-2 text-sm text-ink">
-              <AlertCircle size={16} className="shrink-0 mt-0.5 text-amber-dark" />
-              <span>
-                This rewrites everyone&apos;s scores for week {episode.week_number} and locks the episode — the family
-                sees it straight away.
-                {isFinale && ' It also pays out all winner guesses from earlier weeks.'}
+            <span
+              className={`mt-0.5 w-5 h-5 shrink-0 rounded-md border flex items-center justify-center transition-all ${
+                isFinale ? 'bg-amber-btn border-amber-btn text-white' : 'bg-surface border-border text-transparent'
+              }`}
+            >
+              <Check size={13} strokeWidth={3} />
+            </span>
+            <span>
+              <span className="flex items-center gap-1.5 font-semibold text-ink">
+                <Crown size={14} className="text-amber-dark" />
+                This is the final — record the season winner
               </span>
+              <span className="block text-xs text-ink-muted mt-0.5">
+                Scoring will also pay out every winner guess made earlier in the season.
+              </span>
+            </span>
+          </button>
+
+          {error && (
+            <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-red-50 border border-red-200 text-sm text-red-700">
+              <AlertCircle size={16} className="shrink-0" />
+              {error}
             </div>
-            <div className="flex gap-2">
-              <button onClick={scoreEpisode} disabled={scoring} className="btn btn-success btn-sm flex-1">
-                <Trophy size={15} />
-                {scoring ? 'Scoring...' : 'Yes, score it'}
+          )}
+
+          {!allRequiredFilled && (
+            <p className="text-sm text-ink-muted text-center">
+              Star Baker, Technical Winner and Technical Loser are needed before scoring.
+            </p>
+          )}
+
+          {!confirmingScore ? (
+            <div className="space-y-2">
+              <button
+                onClick={() => { setError(null); setConfirmingScore(true); }}
+                disabled={busy || !allRequiredFilled}
+                className="btn btn-success btn-lg w-full"
+              >
+                <Trophy size={18} />
+                {scoring ? 'Scoring…' : existingResults ? 'Save & re-score week' : 'Save & score week'}
               </button>
-              <button onClick={() => setConfirmingScore(false)} disabled={scoring} className="btn btn-secondary btn-sm flex-1">
-                Cancel
+              <button onClick={saveResults} disabled={busy || !allRequiredFilled} className="btn btn-secondary w-full min-h-12">
+                {saved ? <Check size={16} /> : null}
+                {saving ? 'Saving…' : saved ? 'Saved — not scored yet' : 'Save only, score later'}
               </button>
             </div>
-          </div>
-        )}
-      </div>
+          ) : (
+            <div className="card p-4 space-y-3 animate-fade-up">
+              <div className="flex items-start gap-2 text-sm text-ink">
+                <AlertCircle size={16} className="shrink-0 mt-0.5 text-amber-dark" />
+                <span>
+                  This rewrites everyone&apos;s points for week {episode.week_number}. Each player only sees them after
+                  tapping &ldquo;I&apos;ve watched&rdquo;.
+                  {isFinale && ' It also pays out all winner guesses from earlier weeks.'}
+                </span>
+              </div>
+              <div className="flex gap-2">
+                <button onClick={saveAndScore} disabled={busy} className="btn btn-success flex-1 min-h-12">
+                  <Trophy size={16} />
+                  {busy ? 'Working…' : 'Yes, score it'}
+                </button>
+                <button onClick={() => setConfirmingScore(false)} disabled={busy} className="btn btn-secondary flex-1 min-h-12">
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

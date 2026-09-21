@@ -1,9 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Player, getPlayerColor } from '@/lib/types';
 import { Crown } from 'lucide-react';
+import SpoilerGate from '@/components/SpoilerGate';
+import { useWatched, visibleScores } from '@/hooks/useWatched';
 
 interface LeaderboardEntry {
   player: Player;
@@ -32,40 +34,44 @@ function rankEntries(rows: { player: Player; total: number; weekly: number }[]):
 }
 
 export default function Leaderboard({ compact = false }: { compact?: boolean }) {
-  const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
+  const { isWatched, markWatched } = useWatched();
+  const [players, setPlayers] = useState<Player[]>([]);
+  const [scores, setScores] = useState<{ player_id: string; episode_id: string; category: string; points: number }[]>([]);
+  const [scoredEpisodes, setScoredEpisodes] = useState<{ id: string; week_number: number }[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function load() {
-      const [{ data: players }, { data: scores }, { data: scoredEpisodes }] = await Promise.all([
+      const [{ data: playerRows }, { data: scoreRows }, { data: episodeRows }] = await Promise.all([
         supabase.from('players').select('*').order('name'),
         supabase.from('scores').select('*'),
-        supabase.from('episodes').select('id, week_number').eq('status', 'scored').order('week_number', { ascending: false }).limit(1),
+        supabase.from('episodes').select('id, week_number').eq('status', 'scored').order('week_number'),
       ]);
 
-      if (!players) { setLoading(false); return; }
-
-      const totals: Record<string, number> = {};
-      const weekly: Record<string, number> = {};
-      const latestEpId = scoredEpisodes?.[0]?.id;
-
-      players.forEach((p) => { totals[p.id] = 0; weekly[p.id] = 0; });
-      scores?.forEach((s) => {
-        totals[s.player_id] = (totals[s.player_id] || 0) + s.points;
-        if (latestEpId && s.episode_id === latestEpId) {
-          weekly[s.player_id] = (weekly[s.player_id] || 0) + s.points;
-        }
-      });
-
-      const ranked = rankEntries(
-        players.map((player) => ({ player, total: totals[player.id] || 0, weekly: weekly[player.id] || 0 }))
-      );
-
-      setEntries(ranked);
+      setPlayers(playerRows || []);
+      setScores(scoreRows || []);
+      setScoredEpisodes(episodeRows || []);
       setLoading(false);
     }
     load();
   }, []);
+
+  // Spoiler guard: only weeks this viewer has watched count toward what they see.
+  const unwatched = scoredEpisodes.filter((e) => !isWatched(e.week_number));
+  const entries = useMemo(() => {
+    const watched = scoredEpisodes.filter((e) => isWatched(e.week_number));
+    const latestEpId = watched[watched.length - 1]?.id;
+    const totals: Record<string, number> = {};
+    const weekly: Record<string, number> = {};
+    players.forEach((p) => { totals[p.id] = 0; weekly[p.id] = 0; });
+    visibleScores(scores, scoredEpisodes, isWatched).forEach((s) => {
+      totals[s.player_id] = (totals[s.player_id] || 0) + s.points;
+      if (latestEpId && s.episode_id === latestEpId) {
+        weekly[s.player_id] = (weekly[s.player_id] || 0) + s.points;
+      }
+    });
+    return rankEntries(players.map((player) => ({ player, total: totals[player.id] || 0, weekly: weekly[player.id] || 0 })));
+  }, [players, scores, scoredEpisodes, isWatched]);
 
   if (loading) {
     return (
@@ -94,7 +100,8 @@ export default function Leaderboard({ compact = false }: { compact?: boolean }) 
   }
 
   const hasScores = entries[0].total > 0;
-  const leaders = hasScores ? entries.filter((e) => e.rank === 1) : [entries[0]];
+  // Before anyone has points there's no leader to crown and no ranks to show.
+  const leaders = hasScores ? entries.filter((e) => e.rank === 1) : [];
   const rest = entries.slice(leaders.length);
   const topTotal = entries[0].total;
 
@@ -107,6 +114,10 @@ export default function Leaderboard({ compact = false }: { compact?: boolean }) 
             <h2 className="eyebrow">Standings</h2>
           </div>
         </div>
+      )}
+
+      {unwatched.length > 0 && (
+        <SpoilerGate compact weeks={[unwatched[0].week_number]} onReveal={() => markWatched(unwatched[0].week_number)} />
       )}
 
       {/* Leader(s) — the page within the page */}
@@ -166,7 +177,7 @@ export default function Leaderboard({ compact = false }: { compact?: boolean }) 
             return (
               <li key={entry.player.id} className="flex items-center gap-3 py-2.5 px-2">
                 <span className="w-8 text-xs font-semibold text-ink-muted tabular-nums text-right">
-                  {entry.tied ? `T-${entry.rank}` : entry.rank}
+                  {!hasScores ? '–' : entry.tied ? `T-${entry.rank}` : entry.rank}
                 </span>
                 <span
                   className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0"

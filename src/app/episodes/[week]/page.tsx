@@ -10,10 +10,13 @@ import { useNow } from '@/lib/useNow';
 import DeadlineNotice from '@/components/DeadlineNotice';
 import { ArrowLeft, Target, Check, X, Clock, Lock } from 'lucide-react';
 import EveryonePicks from '@/components/EveryonePicks';
+import SpoilerGate from '@/components/SpoilerGate';
+import { useWatched } from '@/hooks/useWatched';
 
 export default function EpisodeDetailPage() {
   const params = useParams();
   const now = useNow();
+  const { isWatched, markWatched } = useWatched();
   const weekNumber = Number(params.week);
   const [episode, setEpisode] = useState<Episode | null>(null);
   const [picks, setPicks] = useState<Pick[]>([]);
@@ -112,6 +115,8 @@ export default function EpisodeDetailPage() {
   // Picks stay hidden from each other until nobody can change theirs.
   const picksClosed = episode.status === 'locked' || scored || (episode.status === 'open' && !isPicksOpen(episode, now));
   const hasResults = scored || results.length > 0;
+  // Spoiler guard: results and points stay hidden until this viewer says they've watched.
+  const revealed = hasResults && isWatched(episode.week_number);
   const submittedIds = new Set(picks.map((p) => p.player_id));
   const allCategories = episode?.winner_guess_points
     ? [...CATEGORIES, { ...WINNER_GUESS_CATEGORY, points: episode.winner_guess_points }]
@@ -139,12 +144,16 @@ export default function EpisodeDetailPage() {
         </div>
       )}
 
-      {picksClosed && !hasResults && picks.length > 0 && (
+      {hasResults && !revealed && (
+        <SpoilerGate weeks={[episode.week_number]} onReveal={() => markWatched(episode.week_number)} />
+      )}
+
+      {picksClosed && !revealed && picks.length > 0 && (
         <EveryonePicks categories={allCategories} players={players} contestants={contestants} picks={picks} />
       )}
 
       {/* Results + Picks Grid */}
-      {hasResults && (
+      {revealed && (
         <div className="card overflow-hidden animate-fade-up">
           <div className="overflow-x-auto">
             <table className="w-full text-sm min-w-[480px]">
@@ -201,7 +210,7 @@ export default function EpisodeDetailPage() {
       )}
 
       {/* Week Scores */}
-      {scored && Object.keys(scores).length > 0 && (
+      {revealed && scored && Object.keys(scores).length > 0 && (
         <div className="card p-5 animate-fade-up">
           <h3 className="font-display text-lg text-ink mb-4">Week {episode.week_number} Scores</h3>
           <div className="space-y-2">

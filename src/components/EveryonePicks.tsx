@@ -1,3 +1,6 @@
+'use client';
+
+import { useState } from 'react';
 import { Lock } from 'lucide-react';
 import { Contestant, Pick, PickCategory, Player, getPlayerColor } from '@/lib/types';
 import ContestantAvatar from '@/components/ContestantAvatar';
@@ -9,10 +12,12 @@ interface EveryonePicksProps {
   picks: Pick[];
 }
 
-// Who picked whom, grouped by baker within each category. Only rendered once picks are closed.
+// Who picked whom — per player, or grouped by baker within each category.
+// Only rendered once picks are closed.
 export default function EveryonePicks({ categories, players, contestants, picks }: EveryonePicksProps) {
   const submitted = new Set(picks.map((p) => p.player_id));
   const missing = players.filter((p) => !submitted.has(p.id));
+  const [view, setView] = useState<'player' | 'baker'>('player');
 
   return (
     <div className="space-y-4 animate-fade-up">
@@ -24,7 +29,59 @@ export default function EveryonePicks({ categories, players, contestants, picks 
         </p>
       </div>
 
-      {categories.map((cat) => {
+      <div className="inline-flex p-1 rounded-xl bg-cream-dark/60" role="group" aria-label="Group picks by">
+        {([['player', 'By player'], ['baker', 'By baker']] as const).map(([key, label]) => (
+          <button
+            key={key}
+            onClick={() => setView(key)}
+            aria-pressed={view === key}
+            className={`min-h-10 px-4 rounded-lg text-sm font-medium transition-colors ${
+              view === key ? 'bg-surface text-ink shadow-sm' : 'text-ink-muted hover:text-ink'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {view === 'player' &&
+        players
+          .filter((pl) => submitted.has(pl.id))
+          .map((player) => (
+            <section key={player.id} className="card overflow-hidden">
+              <div className="px-4 py-3 border-b border-border flex items-center gap-2">
+                <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: getPlayerColor(player.color).bg }} />
+                <h3 className="font-semibold text-ink text-sm">{player.name}</h3>
+              </div>
+              <ul className="divide-y divide-border/60">
+                {categories.map((cat) => {
+                  const pick = picks.find((p) => p.player_id === player.id && p.category === cat.key);
+                  const contestant = pick ? contestants.find((c) => c.id === pick.contestant_id) : undefined;
+                  return (
+                    <li key={cat.key} className="px-4 py-2.5 flex items-center gap-3">
+                      <span className="text-xs text-ink-muted w-28 shrink-0 leading-tight">{cat.label}</span>
+                      {contestant ? (
+                        <>
+                          <ContestantAvatar contestant={contestant} className="w-8 h-8 text-xs" />
+                          <span className="font-medium text-ink flex-1 min-w-0 truncate">{contestant.name}</span>
+                          {pick?.locked && (
+                            <span className="inline-flex items-center gap-1 text-xs font-medium text-amber-dark shrink-0">
+                              <Lock size={11} className="text-amber" aria-hidden="true" />
+                              Locked
+                            </span>
+                          )}
+                        </>
+                      ) : (
+                        <span className="text-sm text-ink-muted">No pick</span>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            </section>
+          ))}
+
+      {view === 'baker' && categories.map((cat) => {
         const catPicks = picks.filter((p) => p.category === cat.key);
         const groups = contestants
           .map((c) => ({

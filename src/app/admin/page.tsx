@@ -93,7 +93,7 @@ export default function AdminPage() {
             </Link>
             <Link href={`/admin/picks/${currentEpisode.week_number}`} className="btn btn-secondary min-h-12">
               <Target size={16} />
-              Enter picks for a player
+              Enter or fix player picks
             </Link>
           </div>
         </section>

@@ -15,6 +15,7 @@ import {
   getPlayerColor,
 } from '@/lib/types';
 import { isPicksOpen } from '@/lib/deadline';
+import { rescorePlayerWeek } from '@/lib/rescore';
 import { useNow } from '@/lib/useNow';
 import { useAdmin } from '@/hooks/usePlayer';
 import { ArrowLeft, Check, AlertCircle, Lock, RefreshCw, Target, Trophy, Info } from 'lucide-react';
@@ -41,6 +42,8 @@ export default function AdminPlayerPicksPage() {
   const now = useNow();
 
   const [episode, setEpisode] = useState<Episode | null>(null);
+  // Every week that has (or had) picks, for hopping back to fix an earlier one.
+  const [weeks, setWeeks] = useState<Episode[]>([]);
   const [players, setPlayers] = useState<Player[]>([]);
   const [contestants, setContestants] = useState<Contestant[]>([]);
   const [episodePicks, setEpisodePicks] = useState<Pick[]>([]);
@@ -50,6 +53,8 @@ export default function AdminPlayerPicksPage() {
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  // Set after fixing picks on a scored week: what the player's week is worth now.
+  const [rescoredPoints, setRescoredPoints] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -57,9 +62,17 @@ export default function AdminPlayerPicksPage() {
   const load = useCallback(async () => {
     setLoading(true);
     setLoadError(null);
+    // Moving between weeks reuses this page, so start each one with nobody selected.
+    setSelectedPlayerId(null);
+    setPicks({});
+    setLockedCategory(null);
+    setDirty(false);
+    setSaved(false);
+    setRescoredPoints(null);
+    setError(null);
 
     const [episodeRes, playersRes, contestantsRes] = await Promise.all([
-      supabase.from('episodes').select('*').eq('week_number', weekNumber).limit(1),
+      supabase.from('episodes').select('*').order('week_number'),
       supabase.from('players').select('*').order('name'),
       supabase.from('contestants').select('*').order('name'),
     ]);
@@ -70,8 +83,10 @@ export default function AdminPlayerPicksPage() {
       return;
     }
 
-    const ep: Episode | null = episodeRes.data?.[0] ?? null;
+    const episodes = (episodeRes.data as Episode[] | null) ?? [];
+    const ep = episodes.find((e) => e.week_number === weekNumber) ?? null;
     setEpisode(ep);
+    setWeeks(episodes.filter((e) => e.status !== 'upcoming'));
     setPlayers(playersRes.data ?? []);
     setContestants(contestantsRes.data ?? []);
 
@@ -119,6 +134,7 @@ export default function AdminPlayerPicksPage() {
     setSelectedPlayerId(playerId);
     setDirty(false);
     setSaved(false);
+    setRescoredPoints(null);
     setError(null);
   }
 
@@ -130,6 +146,7 @@ export default function AdminPlayerPicksPage() {
     setPicks((prev) => ({ ...prev, [category]: cleared ? '' : contestantId }));
     setDirty(true);
     setSaved(false);
+    setRescoredPoints(null);
   }
 
   async function handleSave() {
@@ -143,6 +160,7 @@ export default function AdminPlayerPicksPage() {
 
     setSaving(true);
     setSaved(false);
+    setRescoredPoints(null);
     setError(null);
 
     const rows = filled.map((cat) => ({
@@ -207,9 +225,23 @@ export default function AdminPlayerPicksPage() {
     if (fresh) setEpisodePicks(fresh);
 
     setLockedCategory(effectiveLocked);
+    setDirty(false);
+
+    // The week's points are already on the board — bring this player's in line with the fix.
+    if (episode.status === 'scored') {
+      const rescore = await rescorePlayerWeek(selectedPlayer.id, episode);
+      if (rescore.error) {
+        setSaving(false);
+        setError(
+          `Picks saved, but ${selectedPlayer.name}'s points didn't update (${rescore.error}) Save again, or re-score the week from Edit Results.`
+        );
+        return;
+      }
+      setRescoredPoints(rescore.points);
+    }
+
     setSaving(false);
     setSaved(true);
-    setDirty(false);
   }
 
   if (!adminLoaded || loading) {
@@ -266,16 +298,41 @@ export default function AdminPlayerPicksPage() {
         <p className="text-ink-muted text-sm">Week {episode.week_number} &middot; {episode.theme}</p>
       </div>
 
+      {/* Hop to another week — this is how you go back and fix an earlier one */}
+      {weeks.length > 1 && (
+        <nav aria-label="Week" className="flex gap-1.5 overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0 md:flex-wrap">
+          {weeks.map((w) => {
+            const current = w.week_number === episode.week_number;
+            return (
+              <Link
+                key={w.id}
+                href={`/admin/picks/${w.week_number}`}
+                aria-current={current ? 'page' : undefined}
+                onClick={(e) => {
+                  if (!current && dirty && selectedPlayer && !confirm(`Discard the changes you haven't saved for ${selectedPlayer.name}?`)) {
+                    e.preventDefault();
+                  }
+                }}
+                className={`shrink-0 min-h-10 px-3.5 inline-flex items-center rounded-full text-sm font-semibold transition-colors ${
+                  current
+                    ? 'bg-amber-btn text-white'
+                    : 'bg-surface text-ink-secondary shadow-[0_1px_2px_rgba(45,27,14,0.04)] hover:bg-cream-dark/60'
+                }`}
+              >
+                Week {w.week_number}
+              </Link>
+            );
+          })}
+        </nav>
+      )}
+
       {/* What saving here means, given where the week is */}
       {episode.status === 'scored' ? (
-        <div className="rounded-[12px] bg-terracotta-subtle border border-terracotta/20 px-4 py-3 text-sm text-ink leading-relaxed flex gap-2.5">
-          <AlertCircle size={16} className="shrink-0 mt-0.5 text-terracotta" />
+        <div className="rounded-[12px] bg-amber-subtle/60 px-4 py-3 text-xs text-ink-secondary leading-relaxed flex gap-2.5">
+          <Trophy size={14} className="shrink-0 mt-0.5 text-amber-dark" />
           <span>
-            Week {episode.week_number} is already scored. Points won&apos;t change until you{' '}
-            <Link href={`/admin/results/${episode.week_number}`} className="font-semibold text-amber-dark underline underline-offset-2">
-              re-score the week
-            </Link>
-            .
+            Week {episode.week_number} is already scored. Saving a fix here updates that player&apos;s{' '}
+            <strong className="text-ink">points and the standings</strong> straight away.
           </span>
         </div>
       ) : picksOpen ? (
@@ -433,15 +490,6 @@ export default function AdminPlayerPicksPage() {
                   {error}
                 </div>
               )}
-              {saved && episode.status === 'scored' && (
-                <Link
-                  href={`/admin/results/${episode.week_number}`}
-                  className="btn btn-secondary w-full mb-2 shadow-sm"
-                >
-                  <Trophy size={16} />
-                  Re-score week {episode.week_number}
-                </Link>
-              )}
               <div className="bg-cream/95 backdrop-blur-md rounded-[14px] p-1.5 shadow-[0_8px_24px_rgba(45,27,14,0.08)]">
                 <button
                   onClick={handleSave}
@@ -454,6 +502,11 @@ export default function AdminPlayerPicksPage() {
                     <>
                       <Check size={18} />
                       Saved for {selectedPlayer.name}
+                      {rescoredPoints !== null && (
+                        <span className="ml-1 opacity-80 tabular-nums">
+                          · now {rescoredPoints} {rescoredPoints === 1 ? 'pt' : 'pts'}
+                        </span>
+                      )}
                     </>
                   ) : (
                     <>

@@ -1,14 +1,28 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { supabase } from '@/lib/supabase';
+import { Episode } from '@/lib/types';
 import { useAdmin } from '@/hooks/usePlayer';
-import { Lock, Tv, ChefHat, Users, LogOut, ChevronRight } from 'lucide-react';
+import { Lock, Tv, ChefHat, Users, LogOut, ChevronRight, ClipboardCheck, Target } from 'lucide-react';
 
 export default function AdminPage() {
   const { isAdmin, login, logout, loaded } = useAdmin();
   const [pin, setPin] = useState('');
   const [error, setError] = useState(false);
+  const [currentEpisode, setCurrentEpisode] = useState<Episode | null>(null);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    // The week the commissioner is most likely here for: the one in play, else the last one scored.
+    supabase.from('episodes').select('*').order('week_number').then(({ data }) => {
+      const episodes = (data as Episode[] | null) ?? [];
+      const inPlay = episodes.find((e) => e.status === 'open' || e.status === 'locked');
+      const lastScored = episodes.filter((e) => e.status === 'scored').pop();
+      setCurrentEpisode(inPlay ?? lastScored ?? null);
+    });
+  }, [isAdmin]);
 
   if (!loaded) return null;
 
@@ -51,7 +65,7 @@ export default function AdminPage() {
   }
 
   const links = [
-    { href: '/admin/episodes', label: 'Episodes', desc: 'Create, open, lock & enter results', icon: Tv },
+    { href: '/admin/episodes', label: 'Episodes', desc: 'Create, open, lock, results & player picks', icon: Tv },
     { href: '/admin/contestants', label: 'Contestants', desc: 'Add bakers, mark eliminations', icon: ChefHat },
     { href: '/admin/players', label: 'Players', desc: 'Add players, change colors', icon: Users },
   ];
@@ -65,6 +79,25 @@ export default function AdminPage() {
           Lock
         </button>
       </div>
+
+      {currentEpisode && (
+        <section className="card p-4 space-y-3">
+          <div>
+            <p className="eyebrow">Week {currentEpisode.week_number}</p>
+            <h2 className="font-display text-xl text-ink leading-tight">{currentEpisode.theme}</h2>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <Link href={`/admin/results/${currentEpisode.week_number}`} className="btn btn-primary min-h-12">
+              <ClipboardCheck size={16} />
+              {currentEpisode.status === 'scored' ? 'Edit results' : 'Enter results'}
+            </Link>
+            <Link href={`/admin/picks/${currentEpisode.week_number}`} className="btn btn-secondary min-h-12">
+              <Target size={16} />
+              Enter picks for a player
+            </Link>
+          </div>
+        </section>
+      )}
 
       <div className="space-y-2">
         {links.map((link) => {

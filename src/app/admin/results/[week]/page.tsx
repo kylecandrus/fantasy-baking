@@ -7,8 +7,10 @@ import { supabase } from '@/lib/supabase';
 import { Episode, Contestant, Pick, Result, PickCategory, CATEGORIES, WINNER_GUESS_CATEGORY } from '@/lib/types';
 import { useAdmin, usePlayer } from '@/hooks/usePlayer';
 import { markWeekWatched } from '@/hooks/useWatched';
+import { isPicksOpen } from '@/lib/deadline';
+import { useNow } from '@/lib/useNow';
 import { calculatePickScore, calculateWinnerGuessScore } from '@/lib/scoring';
-import { ArrowLeft, ArrowRight, Check, Trophy, AlertCircle, Crown, Ban, Pencil } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, Trophy, AlertCircle, Crown, Ban, Pencil, Lock } from 'lucide-react';
 import ContestantAvatar from '@/components/ContestantAvatar';
 
 // Star Baker / Technical Winner / Technical Loser always happen. A Hollywood handshake
@@ -22,6 +24,7 @@ export default function AdminResultsPage() {
   const weekNumber = Number(params.week);
   const { isAdmin, loaded: adminLoaded } = useAdmin();
   const { playerId } = usePlayer();
+  const now = useNow();
   // One category per screen on the way through, then a review screen.
   const [step, setStep] = useState(0);
 
@@ -115,6 +118,13 @@ export default function AdminResultsPage() {
         .from('results')
         .upsert(filledRows, { onConflict: 'episode_id,category' });
       if (upsertError) { setSaving(false); setError('Failed to save results. Try again.'); return false; }
+    }
+
+    // Results mean the episode has aired — close picks if the week was still open.
+    if (episode.status === 'open') {
+      const { error: lockError } = await supabase.from('episodes').update({ status: 'locked' }).eq('id', episode.id);
+      if (lockError) { setSaving(false); setError('Results saved but failed to lock picks for this week.'); return false; }
+      setEpisode({ ...episode, status: 'locked' });
     }
 
     const sentHomeId = results['sent_home'] || null;
@@ -441,6 +451,15 @@ export default function AdminResultsPage() {
               </span>
             </span>
           </button>
+
+          {isPicksOpen(episode, now) && (
+            <div className="rounded-[12px] bg-amber-subtle/60 px-4 py-3 text-xs text-ink-secondary leading-relaxed flex gap-2.5">
+              <Lock size={14} className="shrink-0 mt-0.5 text-amber-dark" />
+              <span>
+                Picks are still open for week {episode.week_number}. Saving results <strong className="text-ink">locks them</strong>.
+              </span>
+            </div>
+          )}
 
           {error && (
             <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-red-50 border border-red-200 text-sm text-red-700">

@@ -12,6 +12,9 @@ const NAV_ITEMS = [
   { href: '/leaderboard', label: 'Standings', icon: Trophy },
 ];
 
+// Phones get Admin as a fifth tab — the desktop gear icon has no room in a bottom bar.
+const MOBILE_NAV_ITEMS = [...NAV_ITEMS, { href: '/admin', label: 'Admin', icon: Settings }];
+
 export default function Navbar() {
   const pathname = usePathname();
   const router = useRouter();
@@ -88,7 +91,7 @@ export default function Navbar() {
       {/* Mobile bottom nav */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-surface/90 backdrop-blur-xl border-t border-border">
         <div className="flex items-stretch h-16 px-1 max-w-md mx-auto">
-          {NAV_ITEMS.map((item) => {
+          {MOBILE_NAV_ITEMS.map((item) => {
             const Icon = item.icon;
             const active = isActive(item.href);
             return (

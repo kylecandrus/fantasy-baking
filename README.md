@@ -33,5 +33,9 @@ Without them the app runs against a stub and every page shows its empty state.
 ## Each week
 
 1. **Admin → Episodes**: add the episode with a "picks close" time and open it. Picks lock automatically at that time (enforced in the database too).
-2. After it airs, **Admin → Results**: enter results (Handshake and Sent Home can be "none this week"), then Score.
+2. After it airs, **Admin → Enter results** (or **Enter Results** on the week in Admin → Episodes): enter results (Handshake and Sent Home can be "none this week"), then Score. Saving results locks the week if it was still open.
 3. On the final, tick "This is the final" and record the season winner so winner-guess points pay out.
+
+## Entering or fixing picks for someone else
+
+**Admin → Enter or fix player picks** (or **Player Picks** on any week in Admin → Episodes). Use the week buttons at the top to go back to an earlier week. While picks are open this works as-is. After they close — which covers every past week — it needs the commissioner override: run `supabase/migrations/2026-09-admin-picks.sql` once in the Supabase SQL Editor. Fixing picks on a week that's already scored updates that player's points as soon as you save.

@@ -8,10 +8,12 @@ import {
   datetimeLocalToISO,
   formatDeadlineWithDate,
   isDatetimeLocalValid,
+  isPicksOpen,
   toDatetimeLocalValue,
 } from '@/lib/deadline';
+import { useNow } from '@/lib/useNow';
 import { useAdmin } from '@/hooks/usePlayer';
-import { ArrowLeft, Plus, Radio, Lock, Unlock, ClipboardCheck, Eye, Trash2, Crown, Clock, AlertCircle, RefreshCw } from 'lucide-react';
+import { ArrowLeft, Plus, Radio, Lock, Unlock, ClipboardCheck, Eye, Trash2, Crown, Clock, AlertCircle, RefreshCw, Users } from 'lucide-react';
 
 const STATUS_BADGE: Record<EpisodeStatus, { label: string; className: string }> = {
   upcoming: { label: 'Upcoming', className: 'bg-cream-dark text-ink-muted' },
@@ -30,6 +32,7 @@ const MIGRATION_HINT =
 
 export default function AdminEpisodesPage() {
   const { isAdmin, loaded } = useAdmin();
+  const now = useNow();
   const [episodes, setEpisodes] = useState<Episode[]>([]);
   const [newTheme, setNewTheme] = useState('');
   const [newLockAt, setNewLockAt] = useState('');
@@ -372,9 +375,18 @@ export default function AdminEpisodesPage() {
                       </button>
                     )}
                     {ep.status === 'open' && (
-                      <button onClick={() => setConfirmLock(ep.id)} disabled={busy} className="btn btn-danger btn-sm">
-                        <Lock size={13} /> Lock Picks
-                      </button>
+                      <>
+                        {/* Results lead once the deadline has closed picks on its own. */}
+                        <Link
+                          href={`/admin/results/${ep.week_number}`}
+                          className={`btn btn-sm ${isPicksOpen(ep, now) ? 'btn-secondary' : 'btn-primary'}`}
+                        >
+                          <ClipboardCheck size={13} /> Enter Results
+                        </Link>
+                        <button onClick={() => setConfirmLock(ep.id)} disabled={busy} className="btn btn-danger btn-sm">
+                          <Lock size={13} /> Lock Picks
+                        </button>
+                      </>
                     )}
                     {ep.status === 'locked' && (
                       <>
@@ -387,8 +399,18 @@ export default function AdminEpisodesPage() {
                       </>
                     )}
                     {ep.status === 'scored' && (
-                      <Link href={`/episodes/${ep.week_number}`} className="btn btn-secondary btn-sm">
-                        <Eye size={13} /> View
+                      <>
+                        <Link href={`/episodes/${ep.week_number}`} className="btn btn-secondary btn-sm">
+                          <Eye size={13} /> View
+                        </Link>
+                        <Link href={`/admin/results/${ep.week_number}`} className="btn btn-secondary btn-sm">
+                          <ClipboardCheck size={13} /> Edit Results
+                        </Link>
+                      </>
+                    )}
+                    {ep.status !== 'upcoming' && (
+                      <Link href={`/admin/picks/${ep.week_number}`} className="btn btn-secondary btn-sm">
+                        <Users size={13} /> Player Picks
                       </Link>
                     )}
                     <button

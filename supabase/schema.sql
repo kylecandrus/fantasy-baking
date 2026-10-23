@@ -50,7 +50,8 @@ CREATE TABLE results (
   category text NOT NULL CHECK (category IN ('star_baker', 'technical_winner', 'technical_loser', 'sent_home', 'handshake', 'winner_guess')),
   contestant_id uuid REFERENCES contestants(id) ON DELETE CASCADE,
   created_at timestamptz DEFAULT now(),
-  UNIQUE(episode_id, category)
+  -- One row per baker per category: a double-elimination week has two sent_home rows.
+  UNIQUE(episode_id, category, contestant_id)
 );
 
 -- Scores (calculated after each episode is scored)

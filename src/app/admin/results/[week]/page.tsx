@@ -30,7 +30,8 @@ export default function AdminResultsPage() {
 
   const [episode, setEpisode] = useState<Episode | null>(null);
   const [contestants, setContestants] = useState<Contestant[]>([]);
-  const [results, setResults] = useState<Record<string, string>>({});
+  // Contestant ids per category. Only sent_home ever holds more than one (double elimination).
+  const [results, setResults] = useState<Record<string, string[]>>({});
   const [existingResults, setExistingResults] = useState(false);
   const [isFinale, setIsFinale] = useState(false);
   const [confirmingScore, setConfirmingScore] = useState(false);
@@ -59,8 +60,10 @@ export default function AdminResultsPage() {
 
       if (contestantsRes.data) setContestants(contestantsRes.data);
       if (resultsRes.data && resultsRes.data.length > 0) {
-        const existing: Record<string, string> = {};
-        resultsRes.data.forEach((r: Result) => (existing[r.category] = r.contestant_id));
+        const existing: Record<string, string[]> = {};
+        resultsRes.data.forEach((r: Result) => {
+          existing[r.category] = [...(existing[r.category] ?? []), r.contestant_id];
+        });
         setResults(existing);
         setExistingResults(true);
       }
@@ -79,14 +82,25 @@ export default function AdminResultsPage() {
     ? [...CATEGORIES, { ...WINNER_GUESS_CATEGORY, label: 'Season Winner', points: episode?.winner_guess_points ?? 0 }]
     : CATEGORIES;
 
-  const requiredFilled = REQUIRED_CATEGORIES.filter((key) => results[key]).length;
+  const requiredFilled = REQUIRED_CATEGORIES.filter((key) => results[key]?.length).length;
   const allRequiredFilled = requiredFilled === REQUIRED_CATEGORIES.length;
 
   function choose(category: PickCategory, contestantId: string | null) {
     setSaved(false);
     setConfirmingScore(false);
     setError(null);
-    setResults((prev) => ({ ...prev, [category]: contestantId || '' }));
+    if (category === 'sent_home' && contestantId) {
+      // Two bakers can go home in one week: tapping toggles a baker and Next moves on.
+      setResults((prev) => {
+        const current = prev[category] ?? [];
+        const next = current.includes(contestantId)
+          ? current.filter((id) => id !== contestantId)
+          : [...current, contestantId];
+        return { ...prev, [category]: next };
+      });
+      return;
+    }
+    setResults((prev) => ({ ...prev, [category]: contestantId ? [contestantId] : [] }));
     // Brief pause so the tap visibly lands before the next category slides in.
     setTimeout(() => setStep((current) => current + 1), 180);
   }
@@ -98,26 +112,22 @@ export default function AdminResultsPage() {
     setConfirmingScore(false);
     setError(null);
 
-    const filledRows = editableCategories
-      .filter((cat) => results[cat.key])
-      .map((cat) => ({ episode_id: episode.id, category: cat.key, contestant_id: results[cat.key] }));
-    const clearedKeys = editableCategories.filter((cat) => !results[cat.key]).map((cat) => cat.key);
+    const filledRows = editableCategories.flatMap((cat) =>
+      (results[cat.key] ?? []).map((contestantId) => ({ episode_id: episode.id, category: cat.key, contestant_id: contestantId }))
+    );
 
-    // Drop rows for categories the admin cleared, so corrections actually take effect.
-    if (clearedKeys.length > 0) {
-      const { error: clearError } = await supabase
-        .from('results')
-        .delete()
-        .eq('episode_id', episode.id)
-        .in('category', clearedKeys);
-      if (clearError) { setSaving(false); setError('Failed to clear results. Try again.'); return false; }
-    }
+    // Replace this week's rows for the categories this page owns, so corrections (a cleared
+    // category, a different baker, one fewer sent home) actually take effect.
+    const { error: clearError } = await supabase
+      .from('results')
+      .delete()
+      .eq('episode_id', episode.id)
+      .in('category', editableCategories.map((cat) => cat.key));
+    if (clearError) { setSaving(false); setError('Failed to clear results. Try again.'); return false; }
 
     if (filledRows.length > 0) {
-      const { error: upsertError } = await supabase
-        .from('results')
-        .upsert(filledRows, { onConflict: 'episode_id,category' });
-      if (upsertError) { setSaving(false); setError('Failed to save results. Try again.'); return false; }
+      const { error: insertError } = await supabase.from('results').insert(filledRows);
+      if (insertError) { setSaving(false); setError('Failed to save results. Try again.'); return false; }
     }
 
     // Results mean the episode has aired — close picks if the week was still open.
@@ -127,7 +137,7 @@ export default function AdminResultsPage() {
       setEpisode({ ...episode, status: 'locked' });
     }
 
-    const sentHomeId = results['sent_home'] || null;
+    const sentHomeIds = results['sent_home'] ?? [];
 
     // Undo any elimination previously recorded for this week (the admin may have picked
     // the wrong baker, or decided nobody went home).
@@ -135,21 +145,21 @@ export default function AdminResultsPage() {
       .from('contestants')
       .update({ eliminated_week: null })
       .eq('eliminated_week', episode.week_number);
-    if (sentHomeId) unelimQuery = unelimQuery.neq('id', sentHomeId);
+    if (sentHomeIds.length > 0) unelimQuery = unelimQuery.not('id', 'in', `(${sentHomeIds.join(',')})`);
     const { error: unelimError } = await unelimQuery;
     if (unelimError) { setSaving(false); setError('Results saved but failed to un-eliminate the previous contestant.'); return false; }
 
-    if (sentHomeId) {
+    if (sentHomeIds.length > 0) {
       const { error: elimError } = await supabase
         .from('contestants')
         .update({ eliminated_week: episode.week_number })
-        .eq('id', sentHomeId);
+        .in('id', sentHomeIds);
       if (elimError) { setSaving(false); setError('Results saved but failed to mark contestant as eliminated.'); return false; }
     }
 
     setContestants((prev) =>
       prev.map((c) => {
-        if (c.id === sentHomeId) return { ...c, eliminated_week: episode.week_number };
+        if (sentHomeIds.includes(c.id)) return { ...c, eliminated_week: episode.week_number };
         if (c.eliminated_week === episode.week_number) return { ...c, eliminated_week: null };
         return c;
       })
@@ -187,8 +197,6 @@ export default function AdminResultsPage() {
     const typedPicks = picksRes.data as Pick[];
     const typedResults = resultsRes.data as Result[];
 
-    const sentHomeContestantId = typedResults.find((r) => r.category === 'sent_home')?.contestant_id || null;
-    const starBakerContestantId = typedResults.find((r) => r.category === 'star_baker')?.contestant_id || null;
     const actualWinnerId = typedResults.find((r) => r.category === 'winner_guess')?.contestant_id || null;
 
     if (isFinale && !actualWinnerId) {
@@ -204,7 +212,7 @@ export default function AdminResultsPage() {
         player_id: pick.player_id,
         episode_id: episode.id,
         category: pick.category as string,
-        points: calculatePickScore(pick, typedResults, sentHomeContestantId, starBakerContestantId),
+        points: calculatePickScore(pick, typedResults),
       }));
 
     // Always clear this episode's own score rows (even when there are no picks), but never
@@ -346,9 +354,13 @@ export default function AdminResultsPage() {
             </span>
           </div>
 
+          {cat.key === 'sent_home' && (
+            <p className="text-sm text-ink-muted -mt-1">Double elimination? Tap both bakers, then Next.</p>
+          )}
+
           <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
             {(cat.key === 'winner_guess' ? contestants : activeContestants).map((c) => {
-              const selected = results[cat.key] === c.id;
+              const selected = (results[cat.key] ?? []).includes(c.id);
               return (
                 <button
                   key={c.id}
@@ -383,7 +395,7 @@ export default function AdminResultsPage() {
               <ArrowLeft size={16} /> Back
             </button>
             <button onClick={() => setStep(step + 1)} className="btn btn-secondary flex-1 min-h-12">
-              {results[cat.key] || OPTIONAL_CATEGORIES.includes(cat.key) ? 'Next' : 'Skip'} <ArrowRight size={16} />
+              {results[cat.key]?.length || OPTIONAL_CATEGORIES.includes(cat.key) ? 'Next' : 'Skip'} <ArrowRight size={16} />
             </button>
           </div>
         </div>
@@ -398,7 +410,9 @@ export default function AdminResultsPage() {
 
           <div className="card overflow-hidden divide-y divide-border/60">
             {editableCategories.map((c, i) => {
-              const chosen = contestants.find((x) => x.id === results[c.key]);
+              const chosen = (results[c.key] ?? [])
+                .map((id) => contestants.find((x) => x.id === id))
+                .filter((x): x is Contestant => !!x);
               const required = REQUIRED_CATEGORIES.includes(c.key) || c.key === 'winner_guess';
               return (
                 <button
@@ -407,10 +421,12 @@ export default function AdminResultsPage() {
                   className="w-full min-h-16 px-4 py-3 flex items-center gap-3 text-left cursor-pointer hover:bg-cream/60 transition-colors"
                 >
                   <span className="text-xs text-ink-muted w-24 shrink-0 leading-tight">{c.label}</span>
-                  {chosen ? (
+                  {chosen.length > 0 ? (
                     <>
-                      <ContestantAvatar contestant={chosen} className="w-9 h-9 text-xs" />
-                      <span className="font-semibold text-ink flex-1 min-w-0 truncate">{chosen.name}</span>
+                      <span className="flex gap-1 shrink-0">
+                        {chosen.map((x) => <ContestantAvatar key={x.id} contestant={x} className="w-9 h-9 text-xs" />)}
+                      </span>
+                      <span className="font-semibold text-ink flex-1 min-w-0 truncate">{chosen.map((x) => x.name).join(' & ')}</span>
                     </>
                   ) : (
                     <span className={`flex-1 text-sm ${required ? 'font-medium text-terracotta' : 'text-ink-muted'}`}>

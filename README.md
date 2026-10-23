@@ -33,8 +33,12 @@ Without them the app runs against a stub and every page shows its empty state.
 ## Each week
 
 1. **Admin → Episodes**: add the episode with a "picks close" time and open it. Picks lock automatically at that time (enforced in the database too).
-2. After it airs, **Admin → Enter results** (or **Enter Results** on the week in Admin → Episodes): enter results (Handshake and Sent Home can be "none this week"), then Score. Saving results locks the week if it was still open.
+2. After it airs, **Admin → Enter results** (or **Enter Results** on the week in Admin → Episodes): enter results (Handshake and Sent Home can be "none this week"; on a double-elimination week tap both bakers under Sent Home), then Score. Saving results locks the week if it was still open.
 3. On the final, tick "This is the final" and record the season winner so winner-guess points pay out.
+
+## Double eliminations
+
+A week can record two Sent Home bakers, and a Sent Home pick for either scores. This needs a one-off change to the results table: run `supabase/migrations/2026-10-double-elimination.sql` once in the Supabase SQL Editor.
 
 ## Entering or fixing picks for someone else
 

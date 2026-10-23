@@ -24,8 +24,6 @@ export async function rescorePlayerWeek(
 
   const picks = (picksRes.data as Pick[] | null) ?? [];
   const results = (resultsRes.data as Result[] | null) ?? [];
-  const sentHomeContestantId = results.find((r) => r.category === 'sent_home')?.contestant_id || null;
-  const starBakerContestantId = results.find((r) => r.category === 'star_baker')?.contestant_id || null;
 
   const scoreRows = picks
     // Winner guesses are paid out by the finale, not by the episode they were made in.
@@ -34,7 +32,7 @@ export async function rescorePlayerWeek(
       player_id: playerId,
       episode_id: episode.id,
       category: pick.category as string,
-      points: calculatePickScore(pick, results, sentHomeContestantId, starBakerContestantId),
+      points: calculatePickScore(pick, results),
     }));
 
   // A winner guess only has points to fix once the finale has actually paid out.

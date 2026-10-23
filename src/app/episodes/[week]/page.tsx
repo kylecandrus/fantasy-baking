@@ -71,15 +71,16 @@ export default function EpisodeDetailPage() {
     const pick = picks.find((p) => p.player_id === playerId && p.category === category);
     return pick ? getContestantName(pick.contestant_id) : '\u2014';
   };
+  // A category can have more than one result: two bakers can go home in the same week.
   const getResult = (category: string) => {
-    const result = results.find((r) => r.category === category);
-    return result ? getContestantName(result.contestant_id) : '\u2014';
+    const matching = results.filter((r) => r.category === category);
+    return matching.length > 0 ? matching.map((r) => getContestantName(r.contestant_id)).join(' & ') : '\u2014';
   };
   const isCorrect = (playerId: string, category: string) => {
     const pick = picks.find((p) => p.player_id === playerId && p.category === category);
-    const result = results.find((r) => r.category === category);
-    if (!pick || !result) return null;
-    return pick.contestant_id === result.contestant_id;
+    const matching = results.filter((r) => r.category === category);
+    if (!pick || matching.length === 0) return null;
+    return matching.some((r) => r.contestant_id === pick.contestant_id);
   };
   const getPickScore = (playerId: string, category: string) => {
     const score = categoryScores.find((s) => s.player_id === playerId && s.category === category);
